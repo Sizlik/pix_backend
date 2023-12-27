@@ -1,0 +1,27 @@
+name: pipeline
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: deploy to server
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: pixlogistic.com
+          username: root
+          password: s7kNU-Ck.cmRUQ
+          port: 22
+          script: |
+            cd cicd/pix_backend
+            git pull --rebase
+            docker build -t backend .
+            alembic upgrade head
+            cd ../../pix_backend
+            docker-compose down
+            docker-compose up -d
+            docker system prune --force
