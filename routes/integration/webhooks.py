@@ -1,0 +1,48 @@
+import uuid
+
+from fastapi import APIRouter, Depends, Query
+
+from manager.moysklad import InvoiceOutManager
+from dependecies import (orders as dependency_orders, bitrix as dependency_bitrix, moysklad as dependency_moysklad)
+from manager.orders import OrderManager, OrderItemsManager
+
+router = APIRouter(prefix="/webhooks", tags=["Integration Webhooks"])
+
+
+@router.post("/invoice")
+async def created_invoice_webhook(
+        id=Query(uuid.UUID),
+        moysklad_invoice_out_manager: InvoiceOutManager = Depends(dependency_moysklad.get_invoice_out_manager),
+        order_manager: OrderManager = Depends(dependency_orders.get_order_manager),
+        order_items_manager: OrderItemsManager = Depends(dependency_orders.get_order_items_manager),
+):
+    invoice = await moysklad_invoice_out_manager.get_invoice_by_id(id)
+    invoice_positions = await moysklad_invoice_out_manager.get_invoice_positions(id)
+    order = await order_manager.get_order_by_moysklad_customer_order_id(invoice["customerOrder"]["meta"]["href"].split("/")[-1])
+
+    order_update_data = {
+        "payedSum": invoice["payedSum"],
+        "shippedSum": invoice["shippedSum"],
+        "sum": invoice["sum"],
+        "moysklad_invoice_out_id": invoice["id"]
+    }
+
+    await order_manager.update_order(order.id, order_update_data)
+
+    product_ids = [x["assortment"]["meta"]["href"].split("/")[-1] for x in invoice_positions["rows"]]
+
+    order_items = await order_items_manager.get_order_items_by_moysklad_product_ids(product_ids)
+
+    for i in invoice_positions["rows"]:
+        for k in order_items:
+            print(k.moysklad_product_id, i["assortment"]["meta"]["href"].split("/")[-1])
+            if str(k.moysklad_product_id) == i["assortment"]["meta"]["href"].split("/")[-1]:
+                order_item_update_data = {
+                    "moysklad_invoice_item_id": i["id"],
+                    "quantity": i["quantity"],
+                    "price": i["price"],
+                }
+                await order_items_manager.update_order_item(k.id, order_item_update_data)
+                break
+
+    return invoice

@@ -5,6 +5,9 @@ services:
       - 5431:5432
     env_file:
       - .env
+    volumes:
+      - ./db_data:/var/lib/postgresql/data/
+    restart: always
 
   redis:
     image: redis
@@ -12,3 +15,71 @@ services:
       - 6379:6379
     env_file:
       - .env
+
+  frontend:
+    image: frontend:latest
+    ports:
+      - 3000:3000
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    restart: always
+
+  backend:
+    image: backend:latest
+    ports:
+      - 8000:8000
+    env_file:
+      - .env
+    depends_on:
+      - database
+      - redis
+    restart: always
+
+  mailserver:
+    image: ghcr.io/docker-mailserver/docker-mailserver:latest
+    container_name: mailserver
+    # Provide the FQDN of your mail server here (Your DNS MX record should point to this value)
+    hostname: mail.pixlogistic.com
+    ports:
+      - "25:25"
+      - "587:587"
+      - "465:465"
+    volumes:
+      - ./docker-data/dms/mail-data/:/var/mail/
+      - ./docker-data/dms/mail-state/:/var/mail-state/
+      - ./docker-data/dms/mail-logs/:/var/log/mail/
+      - ./docker-data/dms/config/:/tmp/docker-mailserver/
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/letsencrypt:/etc/letsencrypt
+    environment:
+      # Using letsencrypt for SSL/TLS certificates:
+      - SSL_TYPE=letsencrypt
+      # Allow sending emails from other docker containers:
+      # Beware creating an Open Relay: https://docker-mailserver.github.io/docker-mailserver/latest/config/environment/#permit_docker
+      - PERMIT_DOCKER=network
+      # You may want to enable this: https://docker-mailserver.github.io/docker-mailserver/latest/config/environment/#spoof_protection
+      # See step 6 below, which demonstrates setup with enabled/disabled SPOOF_PROTECTION:
+      - ENABLE_POSTGREY=0
+      - ENABLE_CLAMAV=0
+      - ENABLE_SPAMASSASSIN=0
+      - SPOOF_PROTECTION=0
+      - ENABLE_RSPAMD=1
+      - ENABLE_OPENDKIM=0
+      - ENABLE_AMAVIS=0
+    cap_add:
+      - NET_ADMIN # For Fail2Ban to work
+    restart: always
+
+  nginx:
+    image: nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./conf.d:/etc/nginx/conf.d
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /etc/letsencrypt:/etc/nginx/ssl
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
