@@ -1,4 +1,5 @@
 # import requests
+import uuid
 from uuid import UUID
 
 import jwt
@@ -46,7 +47,7 @@ async def websocket_connection(websocket: WebSocket, redis_strategy: RedisStrate
 
 
 @router.post("/{order_id}")
-async def create_order_chat_room(order_id: int, user: User = Depends(current_user_dependency), chat_room_manager: ChatRoomManager = Depends(get_chat_room_manager)):
+async def create_order_chat_room(order_id: uuid.UUID, user: User = Depends(current_user_dependency), chat_room_manager: ChatRoomManager = Depends(get_chat_room_manager)):
     return await chat_room_manager.create_order_chat(user, order_id)
 
 
@@ -67,7 +68,7 @@ async def create_order_chat_room(order_id: int, user: User = Depends(current_use
 
 
 @router.get("/{order_id}")
-async def get_order_chat_room(order_id: int, user: User = Depends(current_user_dependency),
+async def get_order_chat_room(order_id: uuid.UUID, user: User = Depends(current_user_dependency),
                               chat_room_manager: ChatRoomManager = Depends(get_chat_room_manager)):
     return await chat_room_manager.get_order_chat(user, order_id)
 

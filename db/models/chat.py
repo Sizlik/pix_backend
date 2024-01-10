@@ -30,7 +30,7 @@ class ChatRoom(Base):
     id = Column(UUID, primary_key=True, default=uuid.uuid4)
     members = Column(JSON)
     client_id = Column(ForeignKey("user.id"))
-    order_id = Column(ForeignKey("order.id"))
+    order_id = Column(UUID)
 
     last_message = column_property(
         select(Message.message).order_by(desc(Message.time_created)).limit(1).as_scalar()

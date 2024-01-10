@@ -14,7 +14,6 @@ class Order(Base):
 
     payedSum = Column(Float)
     shippedSum = Column(Float)
-    state = Column(String)
     sum = Column(Integer)
 
     moysklad_invoice_out_id = Column(UUID)
@@ -22,6 +21,7 @@ class Order(Base):
     moysklad_product_folder_meta = Column(JSON)
     moysklad_customer_order_id = Column(UUID)
     moysklad_customer_order_meta = Column(JSON)
+    moysklad_customer_order_state = Column(String, default="Новый")
 
     user_id = Column(ForeignKey("user.id"), nullable=False)
 

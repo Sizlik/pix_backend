@@ -1,6 +1,7 @@
 from manager.moysklad import CounterpartyManager, CounterpartyRepository, CounterpartyReportManager, \
     CounterpartyReportRepository, ProductFolderRepository, ProductFolderManager, ProductManager, ProductRepository, \
-    CustomerOrderManager, CustomerOrderRepository, InvoiceOutManager, InvoiceOutRepository
+    CustomerOrderManager, CustomerOrderRepository, InvoiceOutManager, InvoiceOutRepository, PaymentInManager, \
+    PaymentInRepository
 
 
 async def get_counterparty_manager():
@@ -25,3 +26,8 @@ async def get_customer_order_manager():
 
 async def get_invoice_out_manager():
     return InvoiceOutManager(InvoiceOutRepository())
+
+
+async def get_payment_in_manager():
+    return PaymentInManager(PaymentInRepository())
+

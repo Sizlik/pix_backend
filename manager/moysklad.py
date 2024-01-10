@@ -45,6 +45,10 @@ class InvoiceOutRepository(MoySkladRepository):
     model = "entity/invoiceout"
 
 
+class PaymentInRepository(MoySkladRepository):
+    model = "entity/paymentin"
+
+
 class CounterpartyManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
@@ -90,6 +94,18 @@ class ProductManager:
 
         return await self.__repo.create_multiply(products)
 
+    async def create_products(self, order: OrderCreate, user: User):
+        products = []
+        for item in order.order_items:
+            product = moysklad.ProductCreate(
+                name=f"{item.link} - {user.last_name} {user.first_name} - {user.email}",
+                description=f"Комментарий: {item.comment}\nТелефон: {user.phone_number}",
+            ).model_dump()
+
+            products.append(product)
+
+        return await self.__repo.create_multiply(products)
+
 
 class CustomerOrderManager:
     def __init__(self, repo: AbstractRepository):
@@ -117,6 +133,36 @@ class CustomerOrderManager:
         }
         return await self.__repo.create(**customer_order)
 
+    async def create_order_by_request(self, order_items, user: User):
+        positions = []
+        for order_item in order_items:
+            position = {
+                "quantity": order_item["count"],
+                "assortment": {
+                    "meta": order_item["moysklad_product_meta"]
+                }
+            }
+            positions.append(position)
+
+        customer_order = {
+            "organization": {
+                "meta": organization.get("meta")
+            },
+            "agent": {
+                "meta": user.moysklad_counterparty_meta
+            },
+            "positions": positions
+        }
+        return await self.__repo.create(**customer_order)
+
+    async def get_order_by_id(self, id):
+        return await self.__repo.read_one(id, link="expand=positions.assortment")
+
+    async def get_orders_by_user(self, user: User):
+        return await self.__repo.read_all(
+            f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}&expand=state&limit=100&order=created,desc"
+        )
+
 
 class InvoiceOutManager:
     def __init__(self, repo: AbstractRepository):
@@ -131,3 +177,15 @@ class InvoiceOutManager:
     async def get_invoice_positions(self, id):
         return await self.__repo.read_one(str(id) + "/positions")
 
+
+class PaymentInManager:
+    def __init__(self, repo: AbstractRepository):
+        self.__repo = repo
+
+    async def create_payment_in(self, user: User, sum):
+        payment_in_data = {
+            "organization": organization,
+            "agent": {"meta": user.moysklad_counterparty_meta},
+            "sum": sum
+        }
+        return await self.__repo.create(**payment_in_data)

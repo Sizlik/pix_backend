@@ -16,5 +16,5 @@ class ProductFolderCreate(BaseModel):
 class ProductCreate(BaseModel):
     name: str
     description: str
-    productFolder: dict
+    productFolder: dict | None = None
 

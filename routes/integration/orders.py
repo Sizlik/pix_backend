@@ -56,8 +56,7 @@ async def background_create_order(order_create_data, user: User, order_id: int, 
         moysklad_customer_order_id=customerorder.get("id"),
         moysklad_customer_order_meta=customerorder.get("meta"),
     )
-    data = await order_manager.moysklad_product_folder_insert(order_id, customerorder_data)
-    print(data)
+    await order_manager.moysklad_product_folder_insert(order_id, customerorder_data)
 
 
 @router.post("/")

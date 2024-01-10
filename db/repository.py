@@ -12,7 +12,7 @@ from db.postgres import get_async_session, async_session_maker
 
 class AbstractRepository(ABC):
     @abstractmethod
-    async def read_one(self, id):
+    async def read_one(self, id, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
@@ -46,8 +46,8 @@ class MoySkladRepository(AbstractRepository):
         "Authorization": f'Basic {base64.b64encode(f"{__login}:{__password}".encode("UTF-8")).decode("utf-8")}'
     }
 
-    async def read_one(self, id):
-        return requests.get(self.__link + self.model + "/" + str(id), headers=self.__headers).json()
+    async def read_one(self, id, **kwargs):
+        return requests.get(self.__link + self.model + "/" + str(id) + "?" + kwargs.get("link", ""), headers=self.__headers).json()
 
     async def create(self, **kwargs):
         return requests.post(self.__link + self.model, headers=self.__headers, json=kwargs).json()
@@ -68,7 +68,7 @@ class MoySkladRepository(AbstractRepository):
 class SQLAlchemyRepository(AbstractRepository):
     model = None
 
-    async def read_one(self, id: UUID | int):
+    async def read_one(self, id: UUID | int, **kwargs):
         async with async_session_maker() as session:
             stmt = select(self.model)
             res = await session.execute(stmt)
