@@ -57,6 +57,15 @@ async def get_user_order(
     return customer_order
 
 
+@router.delete("/{order_id}/positions/{position_id}")
+async def delete_order_position(
+        order_id: str, position_id: str,
+        user: User = Depends(current_user_dependency),
+        customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
+):
+    return await customer_order_manager.delete_order_position_by_id(order_id, position_id)
+
+
 # @router.get("")
 # async def get_user_orders(
 #         user: User = Depends(current_user_dependency),

@@ -35,6 +35,10 @@ class AbstractRepository(ABC):
     async def search_one(self, search):
         raise NotImplementedError
 
+    @abstractmethod
+    async def delete(self, id, **kwargs):
+        raise NotImplementedError
+
 
 class MoySkladRepository(AbstractRepository):
     model = None
@@ -63,6 +67,9 @@ class MoySkladRepository(AbstractRepository):
 
     async def search_one(self, search):
         pass
+
+    async def delete(self, id, **kwargs):
+        return requests.delete(self.__link + self.model + f"/{id}" + kwargs.get("link", ""), headers=self.__headers).status_code
 
 
 class SQLAlchemyRepository(AbstractRepository):
@@ -112,4 +119,7 @@ class SQLAlchemyRepository(AbstractRepository):
             stmt = select(self.model).where(search)
             res = await session.execute(stmt)
             return res.scalar()
+
+    async def delete(self, id, **kwargs):
+        pass
 
