@@ -163,6 +163,9 @@ class CustomerOrderManager:
             f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}&expand=state&limit=100&order=created,desc"
         )
 
+    async def delete_order_position_by_id(self, order_id, position_id):
+        return await self.__repo.delete(order_id, link=f"/positions/{position_id}")
+
 
 class InvoiceOutManager:
     def __init__(self, repo: AbstractRepository):
