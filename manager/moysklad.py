@@ -111,6 +111,15 @@ class CustomerOrderManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
 
+    async def get_metadata(self):
+        return await self.__repo.read_all(metadata="/metadata")
+
+    async def change_state(self, id):
+        metadata = await self.get_metadata()
+        for state in metadata.get("states"):
+            if state.get("name") == "Подтвержден клиентом":
+                return await self.__repo.update(id, state={"meta": state.get("meta")})
+
     async def create_order(self, order_items: list[OrderItems], user: User):
         positions = []
         for order_item in order_items:
@@ -156,7 +165,7 @@ class CustomerOrderManager:
         return await self.__repo.create(**customer_order)
 
     async def get_order_by_id(self, id):
-        return await self.__repo.read_one(id, link="expand=positions.assortment")
+        return await self.__repo.read_one(id, link="expand=positions.assortment,state")
 
     async def get_orders_by_user(self, user: User):
         return await self.__repo.read_all(
@@ -192,3 +201,9 @@ class PaymentInManager:
             "sum": sum
         }
         return await self.__repo.create(**payment_in_data)
+
+
+# class StateManager:
+#     def __init__(self, repo: AbstractRepository):
+#         self.__repo = repo
+
