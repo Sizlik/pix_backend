@@ -4,6 +4,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from db.redis import get_redis_backend
 from routes.users import router as router_users
+from routes.bot import router as router_bot
 from routes.bitrix import router as router_bitrix
 from routes.payments import router as router_payment
 from routes.orders import router as router_orders
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/api_v1")
 
 router.include_router(router)
 router.include_router(router_users)
+router.include_router(router_bot)
 router.include_router(router_payment)
 router.include_router(router_bitrix)
 router.include_router(router_orders)

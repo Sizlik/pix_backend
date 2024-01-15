@@ -24,7 +24,7 @@ class AbstractRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def read_all(self, filter=None, order_by=None):
+    async def read_all(self, filter=None, order_by=None, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
@@ -59,11 +59,11 @@ class MoySkladRepository(AbstractRepository):
     async def create_multiply(self, rows: list):
         return requests.post(self.__link + self.model, headers=self.__headers, json=rows).json()
 
-    async def read_all(self, filter="", order_by=None):
-        return requests.get(self.__link + self.model + "?filter=" + filter, headers=self.__headers).json()
+    async def read_all(self, filter="", order_by=None, **kwargs):
+        return requests.get(self.__link + self.model + kwargs.get("metadata", "") + "?filter=" + filter, headers=self.__headers).json()
 
     async def update(self, id, **kwargs):
-        pass
+        return requests.put(self.__link + self.model + f"/{id}", headers=self.__headers, json=kwargs).json()
 
     async def search_one(self, search):
         pass
@@ -96,7 +96,7 @@ class SQLAlchemyRepository(AbstractRepository):
             res = [x for x in res.scalars()]
             return res
 
-    async def read_all(self, filter=None, order_by=None):
+    async def read_all(self, filter=None, order_by=None, **kwargs):
         async with async_session_maker() as session:
             stmt = select(self.model)
             if filter is not None:

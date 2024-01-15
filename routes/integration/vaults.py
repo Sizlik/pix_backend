@@ -1,5 +1,6 @@
 from typing import Optional
 
+import asyncio
 import requests
 from fastapi import APIRouter
 from bs4 import BeautifulSoup
@@ -27,9 +28,11 @@ def vault_key_builder(
 @cache(expire=1500, key_builder=vault_key_builder)
 async def get_vaults():
     sberbank = BeautifulSoup(requests.get("https://www.bestchange.ru/sberbank-to-tether-trc20.html").text, "html.parser")
+    await asyncio.sleep(3)
     alphabank = BeautifulSoup(requests.get("https://www.bestchange.ru/alfaclick-to-tether-trc20.html").text, "html.parser")
+    await asyncio.sleep(3)
     tinkoff = BeautifulSoup(requests.get("https://www.bestchange.ru/tinkoff-to-tether-trc20.html").text, "html.parser")
-    vtb = BeautifulSoup(requests.get("https://www.bestchange.ru/vtb-to-tether-trc20.html").text, "html.parser")
+    # vtb = BeautifulSoup(requests.get("https://www.bestchange.ru/vtb-to-tether-trc20.html").text, "html.parser")
 
     sberbank_price = 0
     for i in sberbank.find_all('div', class_="fs", limit=3):
@@ -46,10 +49,11 @@ async def get_vaults():
         tinkoff_price += float(i.text.split(" ")[0])
     tinkoff_price = round(tinkoff_price / 3, 2)
 
-    vtb_price = 0
-    for i in vtb.find_all('div', class_="fs", limit=3):
-        vtb_price += float(i.text.split(" ")[0])
-    vtb_price = round(vtb_price / 3, 2)
+    # vtb_price = 0
+    # for i in vtb.find_all('div', class_="fs", limit=3):
+    #     vtb_price += float(i.text.split(" ")[0])
+    # vtb_price = round(vtb_price / 3, 2)
 
-    return {"sberbank": sberbank_price, "alphabank": alphabank_price, "tinkoff": tinkoff_price, "vtb": vtb_price}
+    # return {"sberbank": sberbank_price, "alphabank": alphabank_price, "tinkoff": tinkoff_price, "vtb": vtb_price}
+    return {"sberbank": sberbank_price, "alphabank": alphabank_price, "tinkoff": tinkoff_price}
 
