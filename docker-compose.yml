@@ -37,41 +37,6 @@ services:
       - redis
     restart: always
 
-  mailserver:
-    image: ghcr.io/docker-mailserver/docker-mailserver:latest
-    container_name: mailserver
-    # Provide the FQDN of your mail server here (Your DNS MX record should point to this value)
-    hostname: mail.pixlogistic.com
-    ports:
-      - "25:25"
-      - "587:587"
-      - "465:465"
-    volumes:
-      - ./docker-data/dms/mail-data/:/var/mail/
-      - ./docker-data/dms/mail-state/:/var/mail-state/
-      - ./docker-data/dms/mail-logs/:/var/log/mail/
-      - ./docker-data/dms/config/:/tmp/docker-mailserver/
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/letsencrypt:/etc/letsencrypt
-    environment:
-      # Using letsencrypt for SSL/TLS certificates:
-      - SSL_TYPE=letsencrypt
-      # Allow sending emails from other docker containers:
-      # Beware creating an Open Relay: https://docker-mailserver.github.io/docker-mailserver/latest/config/environment/#permit_docker
-      - PERMIT_DOCKER=network
-      # You may want to enable this: https://docker-mailserver.github.io/docker-mailserver/latest/config/environment/#spoof_protection
-      # See step 6 below, which demonstrates setup with enabled/disabled SPOOF_PROTECTION:
-      - ENABLE_POSTGREY=0
-      - ENABLE_CLAMAV=0
-      - ENABLE_SPAMASSASSIN=0
-      - SPOOF_PROTECTION=0
-      - ENABLE_RSPAMD=1
-      - ENABLE_OPENDKIM=0
-      - ENABLE_AMAVIS=0
-    cap_add:
-      - NET_ADMIN # For Fail2Ban to work
-    restart: always
-
   pgadmin:
     image: dpage/pgadmin4
     restart: always
@@ -79,10 +44,25 @@ services:
       - "5050:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@gmail.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_PASSWORD: mA2rqU024j2x
       SCRIPT_NAME: /pgadmin
     volumes:
       - pgadmin-data:/var/lib/pgadmin
+
+  mailservice:
+    image: axigen/axigen
+    volumes:
+      - ./mail_data:/axigen/var
+      - ./mail_opt:/var/opt
+      - ./mail_opt2:/axigen/opt
+    ports:
+      - 9443:9443
+      - 993:993
+      - 995:995
+      - 25:25
+      - 465:465
+      - 9000:9000
+      - 7000:7000
 
   nginx:
     image: nginx
@@ -95,6 +75,13 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /etc/letsencrypt:/etc/nginx/ssl
     command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+  bot:
+    image: logistic_bot:latest
+    restart: always
+    env_file:
+      - .env
+
 
 volumes:
   pgadmin-data:
