@@ -10,4 +10,5 @@ router = APIRouter(tags=["bot"], prefix="/bot")
 
 @router.post("/accept_transaction")
 async def accept_transaction(transaction: AcceptTransaction, user: User = Depends(current_user_dependency)):
+    print(transaction)
     await telegram_sender.accept_transaction_message(user, transaction)

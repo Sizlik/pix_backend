@@ -1,3 +1,5 @@
+import uuid
+
 from pydantic import BaseModel
 
 
@@ -6,4 +8,5 @@ class AcceptTransaction(BaseModel):
     sum_rub: float
     sum_dol: float
     card: str
+    order_id: str
 

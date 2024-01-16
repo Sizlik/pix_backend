@@ -1,5 +1,6 @@
 import base64
 import os
+import uuid
 
 import requests
 
@@ -202,6 +203,11 @@ class PaymentInManager:
         }
         return await self.__repo.create(**payment_in_data)
 
+    async def link_payment_in(self, id, order_meta):
+        return await self.__repo.update(id, operations=[{"meta": order_meta}])
+
+    async def get_all_user_payment_ins(self, user: User):
+        return await self.__repo.read_all(filter=f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}&order=created,desc&expand=operations&limit=100")
 
 # class StateManager:
 #     def __init__(self, repo: AbstractRepository):
