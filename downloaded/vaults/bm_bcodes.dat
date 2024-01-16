@@ -1,0 +1,97 @@
+32;ARS;Аргентинское песо;Центробанка Аргентины
+36;AUD;Австралийский доллар;Резервного банка Австралии
+50;BDT;Бангладешская така;Банка Бангладеша
+51;AMD;Армянский драм;ЦБ Армении
+124;CAD;Канадский доллар;Банка Канады
+156;CNY;Юань;Банка Китая
+170;COP;Колумбийское песо;Центробанка Колумбии
+203;CZK;Чешская крона;Нацбанка Чехии
+344;HKD;Гонконгский доллар;Управления денежного обращения Гонконга
+348;HUF;Форинт;Венгерского нацбанка
+356;INR;Индийская рупия;Резервного банка Индии
+360;IDR;Индонезийская рупия;Банка Индонезии
+376;ILS;Новый израильский шекель;Банка Израиля
+392;JPY;Японская иена;Банка Японии
+398;KZT;Казахстанский тенге;Нацбанка Казахстана
+410;KRW;Южнокорейская вона;Банка Кореи
+417;KGS;Киргизский сом;Нацбанка Кыргызской Республики
+458;MYR;Малайзийский ринггит;Банка Негара Малайзия
+484;MXN;Мексиканское песо;Банка Мексики
+498;MDL;Молдавский лей;Нацбанка Молдовы
+554;NZD;Новозеландский доллар;Резервного банка Новой Зеландии
+566;NGN;Нигерийская найра;ЦБ Нигерии
+578;NOK;Норвежская крона;Норвежского банка
+586;PKR;Пакистанская рупия;Госбанка Пакистана
+643;RUB;Российский рубль;Мосбиржи и ЦБ России
+702;SGD;Сингапурский доллар;Денежно-кредитного управления Сингапура
+704;VND;Вьетнамский донг;Госбанка Вьетнама
+752;SEK;Шведская крона;Банка Швеции
+756;CHF;Швейцарский франк;Национального банка Швейцарии
+764;THB;Тайский бат;Банка Таиланда
+784;AED;Дирхам ОАЭ;Центрального банка ОАЭ
+826;GBP;Фунт стерлингов;ЦБ Англии
+840;USD;Доллар США;рынка Forex
+860;UZS;Узбекский сум;ЦБ Узбекистана
+944;AZN;Азербайджанский манат;Центробанка Азербайджана
+946;RON;Румынский лей;Нацбанка Румынии
+949;TRY;Турецкая лира;ЦБ Турецкой Республики
+972;TJS;Сомони;Нацбанка Таджикистана
+974;BYN;Белорусский рубль;Нацбанка РБ
+975;BGN;Болгарский лев;Болгарского народного банка
+978;EUR;Евро;Европейского ЦБ
+980;UAH;Гривна;Нацбанка Украины
+981;GEL;Грузинский лари;Нацбанка Грузии
+985;PLN;Польский злотый;Нацбанка Польши
+986;BRL;Бразильский реал;Центробанка Бразилии
+1000;CRO;Cronos;CoinMarketCap
+1001;BTT;BitTorrent;CoinMarketCap
+1002;BAT;BAT;CoinMarketCap
+1003;ONT;Ontology;CoinMarketCap
+1004;QTUM;QTUM;CoinMarketCap
+1005;LINK;Chainlink;CoinMarketCap
+1006;ATOM;Cosmos;CoinMarketCap
+1007;XTZ;Tezos;CoinMarketCap
+1008;DOT;Polkadot;CoinMarketCap
+1009;UNI;Uniswap;CoinMarketCap
+1010;RVN;Ravencoin;CoinMarketCap
+1011;VET;VeChain;CoinMarketCap
+1012;SOL;Solana;CoinMarketCap
+1013;SHIB;Shiba Inu;CoinMarketCap
+1014;MATIC;Polygon;CoinMarketCap
+1015;MKR;Maker;CoinMarketCap
+1016;ALGO;Algorand;CoinMarketCap
+1017;AVAX;Avalanche;CoinMarketCap
+1018;LSK;Lisk;CoinMarketCap
+1019;YFI;Yearn.finance;CoinMarketCap
+1020;MANA;Decentraland;CoinMarketCap
+1021;TON;TON;CoinMarketCap
+1022;LUNA;Terra;CoinMarketCap
+1023;NEAR;NEAR Protocol;CoinMarketCap
+1024;ADA;Cardano;CoinMarketCap
+1025;XLM;Stellar;CoinMarketCap
+1026;BTG;Bitcoin Gold;CoinMarketCap
+1027;TRX;TRON;CoinMarketCap
+1028;OMG;OMG Network;CoinMarketCap
+1029;WAVES;WAVES;CoinMarketCap
+1030;XVG;Verge;CoinMarketCap
+1031;ZRX;0x;CoinMarketCap
+1032;BNB;Binance Coin;CoinMarketCap
+1033;ICX;ICON;CoinMarketCap
+1034;KMD;Komodo;CoinMarketCap
+1035;IOTA;IOTA;CoinMarketCap
+1036;EOS;EOS;CoinMarketCap
+1037;NEO;NEO;CoinMarketCap
+1038;XEM;NEM;CoinMarketCap
+1039;BCH;Bitcoin Cash;CoinMarketCap
+1040;ZEC;Zcash;CoinMarketCap
+1041;XRP;Ripple;CoinMarketCap
+1042;ETC;Ethereum Classic;CoinMarketCap
+1043;XMR;Monero;CoinMarketCap
+1044;DASH;Dash;CoinMarketCap
+1045;ETH;Ethereum;CoinMarketCap
+1046;BSV;Bitcoin SV;CoinMarketCap
+1047;DOGE;Dogecoin;CoinMarketCap
+1048;LTC;Litecoin;CoinMarketCap
+1049;WMX;WMX (0.001 BTC);BlockChain
+1050;BTC;Bitcoin;BlockChain
+1051;CAKE;PancakeSwap;CoinMarketCap
