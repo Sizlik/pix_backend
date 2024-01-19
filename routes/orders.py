@@ -3,6 +3,7 @@ import uuid
 from typing import Annotated
 
 import pandas as pd
+import requests
 from fastapi import APIRouter, Depends, File, UploadFile, Form
 from pydantic import BaseModel
 
@@ -11,8 +12,9 @@ from db.schemas.moysklad import ProductFolderCreate
 from db.schemas.orders import OrderCreate
 from manager.orders import OrderManager, OrderItemsManager
 from manager.moysklad import CustomerOrderManager, ProductManager, ProductFolderManager
+from manager.privoz_order import PrivozManager
 from routes.users import current_user_dependency
-from dependecies import (orders as dependency_orders, bitrix as dependency_bitrix, moysklad as dependency_moysklad)
+from dependecies import (orders as dependency_orders, bitrix as dependency_bitrix, moysklad as dependency_moysklad, privoz_orders as dependency_privoz)
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
@@ -40,16 +42,33 @@ async def create_order(
 
 @router.put("/state/{order_id}")
 async def change_order_state(order_id, user: User = Depends(current_user_dependency), customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),):
-    return await customer_order_manager.change_state(order_id)
+    return await customer_order_manager.change_state(order_id, "Подтвержден клиентом")
 
 
 @router.get("")
 async def get_user_orders(
     user: User = Depends(current_user_dependency),
     customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),
+    privoz_manager: PrivozManager = Depends(dependency_privoz.get_privoz_manager)
 ):
     customer_orders = await customer_order_manager.get_orders_by_user(user)
-    return customer_orders
+
+    orders = []
+    for order in customer_orders.get("rows"):
+        if order.get("shipmentAddressFull", {}).get("comment") and order.get("shipmentAddressFull", {}).get("comment").startswith("#"):
+            privoz_order = await privoz_manager.get_order_by_id(order.get("shipmentAddressFull").get("comment"))
+            order.update({"state": {"name": privoz_order.state}})
+        orders.append(order)
+
+    return orders
+
+
+@router.get("/test")
+async def test(
+    customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),
+    privoz_manager: PrivozManager = Depends(dependency_privoz.get_privoz_manager)
+):
+    return await privoz_manager.parse_privoz()
 
 
 @router.get("/{order_id}")
@@ -57,8 +76,13 @@ async def get_user_order(
     order_id: uuid.UUID,
     user: User = Depends(current_user_dependency),
     customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),
+    privoz_manager: PrivozManager = Depends(dependency_privoz.get_privoz_manager),
 ):
     customer_order = await customer_order_manager.get_order_by_id(order_id)
+    if customer_order.get("shipmentAddressFull", {}).get("comment") and customer_order.get("shipmentAddressFull", {}).get(
+            "comment").startswith("#"):
+        privoz_order = await privoz_manager.get_order_by_id(customer_order.get("shipmentAddressFull").get("comment"))
+        customer_order.update({"state": {"name": privoz_order.state}})
     return customer_order
 
 
@@ -69,6 +93,15 @@ async def delete_order_position(
         customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
 ):
     return await customer_order_manager.delete_order_position_by_id(order_id, position_id)
+
+
+@router.delete("/{order_id}")
+async def cancel_order(
+        order_id: str,
+        user: User = Depends(current_user_dependency),
+        customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
+):
+    return await customer_order_manager.change_state(order_id, "Отменен")
 
 
 # @router.get("")
