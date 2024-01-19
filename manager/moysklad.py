@@ -115,10 +115,10 @@ class CustomerOrderManager:
     async def get_metadata(self):
         return await self.__repo.read_all(metadata="/metadata")
 
-    async def change_state(self, id):
+    async def change_state(self, id, state_name):
         metadata = await self.get_metadata()
         for state in metadata.get("states"):
-            if state.get("name") == "Подтвержден клиентом":
+            if state.get("name") == state_name:
                 return await self.__repo.update(id, state={"meta": state.get("meta")})
 
     async def create_order(self, order_items: list[OrderItems], user: User):

@@ -5,6 +5,7 @@ from uuid import UUID
 
 import requests
 from sqlalchemy import select, insert, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 
 from db.models.users import User
 from db.postgres import get_async_session, async_session_maker
@@ -39,6 +40,10 @@ class AbstractRepository(ABC):
     async def delete(self, id, **kwargs):
         raise NotImplementedError
 
+    @abstractmethod
+    async def upsert(self, array_data):
+        raise NotImplementedError
+
 
 class MoySkladRepository(AbstractRepository):
     model = None
@@ -70,6 +75,9 @@ class MoySkladRepository(AbstractRepository):
 
     async def delete(self, id, **kwargs):
         return requests.delete(self.__link + self.model + f"/{id}" + kwargs.get("link", ""), headers=self.__headers).status_code
+
+    async def upsert(self, **kwargs):
+        pass
 
 
 class SQLAlchemyRepository(AbstractRepository):
@@ -119,6 +127,17 @@ class SQLAlchemyRepository(AbstractRepository):
             stmt = select(self.model).where(search)
             res = await session.execute(stmt)
             return res.scalar()
+
+    async def upsert(self, array_data: list):
+        async with async_session_maker() as session:
+            stmt = sqlite_upsert(self.model).values(array_data)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=self.model.__table__.primary_key,
+                set_=dict(state=stmt.excluded.state)
+            )
+            res = await session.execute(stmt)
+            await session.commit()
+            return res
 
     async def delete(self, id, **kwargs):
         pass
