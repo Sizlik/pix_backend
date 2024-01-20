@@ -68,7 +68,7 @@ class MoySkladRepository(AbstractRepository):
         return requests.get(self.__link + self.model + kwargs.get("metadata", "") + "?filter=" + filter, headers=self.__headers).json()
 
     async def update(self, id, **kwargs):
-        return requests.put(self.__link + self.model + f"/{id}", headers=self.__headers, json=kwargs).json()
+        return requests.put(self.__link + self.model + f"/{id}" + kwargs.get("link", ""), headers=self.__headers, json=kwargs).json()
 
     async def search_one(self, search):
         pass

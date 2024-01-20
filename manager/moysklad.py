@@ -121,6 +121,9 @@ class CustomerOrderManager:
             if state.get("name") == state_name:
                 return await self.__repo.update(id, state={"meta": state.get("meta")})
 
+    async def update_order_position(self, order_id, position_id, count):
+        return await self.__repo.update(order_id, link=f"/positions/{position_id}", quantity=count)
+
     async def create_order(self, order_items: list[OrderItems], user: User):
         positions = []
         for order_item in order_items:

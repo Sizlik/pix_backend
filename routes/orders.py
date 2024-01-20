@@ -4,7 +4,7 @@ from typing import Annotated
 
 import pandas as pd
 import requests
-from fastapi import APIRouter, Depends, File, UploadFile, Form
+from fastapi import APIRouter, Depends, File, UploadFile, Form, Body
 from pydantic import BaseModel
 
 from db.models.users import User
@@ -93,6 +93,15 @@ async def delete_order_position(
         customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
 ):
     return await customer_order_manager.delete_order_position_by_id(order_id, position_id)
+
+
+@router.put("/{order_id}/positions/{position_id}")
+async def update_order_position(
+        order_id: str, position_id: str, count: int = Body(...),
+        user: User = Depends(current_user_dependency),
+        customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
+):
+    return await customer_order_manager.update_order_position(order_id, position_id, count)
 
 
 @router.delete("/{order_id}")
