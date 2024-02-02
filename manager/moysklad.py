@@ -84,7 +84,7 @@ class ProductManager:
         products = []
         for order_item in order_items:
             product = moysklad.ProductCreate(
-                name=f"{order_item.link} - Заказ: #{order_id} - {user.last_name} {user.first_name} - {user.email}",
+                name=f"{order_item.link} - Заказ: #{order_id}",
                 description=f"""id на pixlogistic: {order_item.id}
 Комментарий: {order_item.comment}
 Телефон: {user.phone_number}
@@ -99,8 +99,8 @@ class ProductManager:
         products = []
         for item in order.order_items:
             product = moysklad.ProductCreate(
-                name=f"{item.link} - {user.last_name} {user.first_name} - {user.email}",
-                description=f"Комментарий: {item.comment}\nТелефон: {user.phone_number}",
+                name=f"{item.link}",
+                description=f"{item.comment}",
             ).model_dump()
 
             products.append(product)
@@ -123,6 +123,9 @@ class CustomerOrderManager:
 
     async def update_order_position(self, order_id, position_id, count):
         return await self.__repo.update(order_id, link=f"/positions/{position_id}", quantity=count)
+
+    async def add_order_position(self, order_id, order_items):
+        return await self.__repo.create(link=f"{order_id}/positions", quantity=order_items[0]["count"], assortment={"meta": order_items[0]["moysklad_product_meta"]})
 
     async def create_order(self, order_items: list[OrderItems], user: User):
         positions = []

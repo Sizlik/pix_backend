@@ -4,8 +4,8 @@ from pydantic import BaseModel
 class CounterpartyCreate(BaseModel):
     name: str
     description: str
-    email: str
-    phone: str
+    email: str = ""
+    phone: str = ""
 
 
 class ProductFolderCreate(BaseModel):

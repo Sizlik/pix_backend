@@ -7,6 +7,7 @@ import requests
 from fastapi import APIRouter, Depends, File, UploadFile, Form, Body
 from pydantic import BaseModel
 
+from bot.sender import telegram_sender
 from db.models.users import User
 from db.schemas.moysklad import ProductFolderCreate
 from db.schemas.orders import OrderCreate
@@ -36,13 +37,16 @@ async def create_order(
         })
 
     customer_orders = await customer_order_manager.create_order_by_request(order_items, user)
-
+    await telegram_sender.send_group_message(f'<a href="{customer_orders.get("meta").get("uuidHref")}">Новый заказ</a>\nПользователь: {user.id}')
     return customer_orders
 
 
 @router.put("/state/{order_id}")
 async def change_order_state(order_id, user: User = Depends(current_user_dependency), customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),):
-    return await customer_order_manager.change_state(order_id, "Подтвержден клиентом")
+    order = await customer_order_manager.change_state(order_id, "Подтвержден клиентом")
+    await telegram_sender.send_group_message(
+        f'<a href="{order.get("meta").get("uuidHref")}">Заказ подтверждён</a>\nПользователь: {user.id}')
+    return order
 
 
 @router.get("")
@@ -104,13 +108,36 @@ async def update_order_position(
     return await customer_order_manager.update_order_position(order_id, position_id, count)
 
 
+@router.put("/{order_id}/positions")
+async def update_order_position(
+        order_id: str,
+        order: OrderCreate,
+        user: User = Depends(current_user_dependency),
+        customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),
+        product_manager: ProductManager = Depends(dependency_moysklad.get_product_manager),
+):
+    products = await product_manager.create_products(order, user)
+    order_items = []
+    for product, order_item in zip(products, order.order_items):
+        order_items.append({
+            "count": order_item.count,
+            "moysklad_product_meta": product.get("meta")
+        })
+
+    customer_order = await customer_order_manager.add_order_position(order_id, order_items)
+    await telegram_sender.send_group_message(f'<a href="https://online.moysklad.ru/app/#customerorder/edit?id={order_id}">В заказ добавлена позиция</a>\nПользователь: {user.id}')
+    return customer_order
+
+
 @router.delete("/{order_id}")
 async def cancel_order(
         order_id: str,
         user: User = Depends(current_user_dependency),
         customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
 ):
-    return await customer_order_manager.change_state(order_id, "Отменен")
+    order = await customer_order_manager.change_state(order_id, "Отменен")
+    await telegram_sender.send_group_message(f'<a href="{order.get("meta").get("uuidHref")}">Заказ отменён</a>\nПользователь: {user.id}')
+    return order
 
 
 # @router.get("")
