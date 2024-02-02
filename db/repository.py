@@ -59,7 +59,7 @@ class MoySkladRepository(AbstractRepository):
         return requests.get(self.__link + self.model + "/" + str(id) + "?" + kwargs.get("link", ""), headers=self.__headers).json()
 
     async def create(self, **kwargs):
-        return requests.post(self.__link + self.model, headers=self.__headers, json=kwargs).json()
+        return requests.post(self.__link + self.model + "/" + kwargs.get("link", ""), headers=self.__headers, json=kwargs).json()
 
     async def create_multiply(self, rows: list):
         return requests.post(self.__link + self.model, headers=self.__headers, json=rows).json()

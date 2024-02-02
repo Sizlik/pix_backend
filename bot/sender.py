@@ -10,6 +10,7 @@ from db.schemas.transactions import AcceptTransaction
 
 class Sender:
     TOKEN = getenv("BOT_TOKEN")
+    chat_id = getenv("CHAT_ID")
     bot = Bot(TOKEN, parse_mode=ParseMode.HTML)
 
     @staticmethod
@@ -20,6 +21,9 @@ class Sender:
     async def accept_transaction_message(self, user: User, transaction: AcceptTransaction):
         await self.bot.send_message(592901349, f"Пользователь: {user.email} пополнил счёт!\nБанк: {transaction.bank}\nНа сумму: {transaction.sum_rub} ₽ \\ {transaction.sum_dol} $\nНа счёт: {transaction.card}\nID заказа: {transaction.order_id}", reply_markup=await self.keyboard())
         # await self.bot.send_message(592901349, f"Пользователь: {user.email} пополнил счёт!\nБанк: {transaction.bank}\nНа сумму: {transaction.sum_rub} ₽ \\ {transaction.sum_dol} $\nНа счёт: {transaction.card}\nID заказа: {transaction.order_id}", reply_markup=await self.keyboard())
+
+    async def send_group_message(self, text):
+        await self.bot.send_message(self.chat_id, text, parse_mode=ParseMode.HTML)
 
 
 telegram_sender = Sender()
