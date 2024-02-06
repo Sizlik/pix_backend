@@ -47,7 +47,7 @@ passlib==1.7.4
 pendulum==3.0.0
 prompt-toolkit==3.0.43
 pycparser==2.21
-pydantic==2.5.1
+pydantic
 pydantic_core==2.14.3
 PyJWT==2.8.0
 python-dateutil==2.8.2
