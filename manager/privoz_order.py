@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+from fastapi_utils.tasks import repeat_every
 
 from db.models.privoz_order import PrivozOrder
 from db.repository import SQLAlchemyRepository, AbstractRepository
@@ -53,5 +54,6 @@ class PrivozManager:
         await self.order_repo.upsert(orders)
 
         return orders
+
 
 
