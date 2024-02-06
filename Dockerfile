@@ -15,4 +15,4 @@ RUN pip install -r /code/requirements.txt
 COPY . /code
 
 #
-CMD sh -c 'uvicorn main:app --host 0.0.0.0 --port 8000' && 'celery -A manager.privoz_order.celery worker --loglevel=info -B' && 'celery -A manager.privoz_order.celery flower --port 5555'
+CMD ["/bin/bash", "-c", "uvicorn main:app --host 0.0.0.0 --port 8000;celery -A manager.privoz_order.celery worker --loglevel=info -B;celery -A manager.privoz_order.celery flower --port 5555"]
