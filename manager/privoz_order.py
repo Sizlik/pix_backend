@@ -55,7 +55,8 @@ class PrivozManager:
             for tr in soup.find_all("tr")[1:-1]:
                 orders.append({"privoz_order": tr.find_next("a").text, "state": tr.find_all("td")[2].text})
 
-        await self.order_repo.upsert(orders)
+        result = await self.order_repo.upsert(orders)
+        print(result)
 
         return orders
 

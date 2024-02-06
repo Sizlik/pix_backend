@@ -134,9 +134,10 @@ class SQLAlchemyRepository(AbstractRepository):
             stmt = stmt.on_conflict_do_update(
                 index_elements=self.model.__table__.primary_key,
                 set_=dict(state=stmt.excluded.state)
-            )
+            ).returning(self.model)
             res = await session.execute(stmt)
             await session.commit()
+            res = [x for x in res.scalars()]
             return res
 
     async def delete(self, id, **kwargs):

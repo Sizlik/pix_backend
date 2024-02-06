@@ -29,10 +29,12 @@ fastapi==0.104.1
 fastapi-cache2==0.2.1
 fastapi-users==12.1.2
 fastapi-users-db-sqlalchemy==6.0.1
+flower==2.0.1
 frozenlist==1.4.1
 greenlet==3.0.1
 h11==0.14.0
 httptools==0.6.1
+humanize==4.9.0
 idna==3.4
 kombu==5.3.5
 magic-filter==1.0.12
@@ -45,6 +47,7 @@ openpyxl==3.1.2
 pandas==2.1.4
 passlib==1.7.4
 pendulum==3.0.0
+prometheus-client==0.19.0
 prompt-toolkit==3.0.43
 pycparser==2.21
 pydantic==2.5.1
@@ -63,6 +66,7 @@ soupsieve==2.5
 SQLAlchemy==2.0.9
 starlette==0.27.0
 time-machine==2.13.0
+tornado==6.4
 typing_extensions==4.8.0
 tzdata==2023.3
 urllib3==2.1.0
