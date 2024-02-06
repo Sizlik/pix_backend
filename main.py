@@ -36,7 +36,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
-    celery.worker_main(["-A", "manager.privoz_order.celery", "worker", "--loglevel=info", "-B"])
     FastAPICache.init(get_redis_backend(), prefix="fastapi-cache")
 
 
