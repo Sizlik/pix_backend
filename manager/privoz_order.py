@@ -1,6 +1,10 @@
+import logging
+import os
+
+import asyncio
 import requests
 from bs4 import BeautifulSoup
-from fastapi_utils.tasks import repeat_every
+from celery import Celery
 
 from db.models.privoz_order import PrivozOrder
 from db.repository import SQLAlchemyRepository, AbstractRepository
@@ -55,5 +59,21 @@ class PrivozManager:
 
         return orders
 
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+celery = Celery()
+celery.conf.broker_url = REDIS_URL
+privozManager = PrivozManager(PrivozRepository())
+
+
+@celery.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(3600.0, parse_privoz.s(), name='add every 10')
+
+
+@celery.task
+def parse_privoz():
+    asyncio.run(privozManager.parse_privoz())
+    print("parsed")
 
 
