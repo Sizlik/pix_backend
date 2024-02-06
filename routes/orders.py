@@ -61,7 +61,7 @@ async def get_user_orders(
     for order in customer_orders.get("rows"):
         if order.get("shipmentAddressFull", {}).get("comment") and order.get("shipmentAddressFull", {}).get("comment").startswith("#"):
             privoz_order = await privoz_manager.get_order_by_id(order.get("shipmentAddressFull").get("comment"))
-            order.update({"state": {"name": privoz_order.state}})
+            order.update({"state": {"n`ame": privoz_order.state}})
         orders.append(order)
 
     return orders

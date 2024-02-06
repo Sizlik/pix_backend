@@ -39,10 +39,6 @@ async def startup():
     FastAPICache.init(get_redis_backend(), prefix="fastapi-cache")
 
 
-def test():
-    print(123)
-
-
 @router.get("/")
 async def root():
     return {"message": "Hello World"}
