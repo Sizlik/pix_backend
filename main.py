@@ -1,10 +1,9 @@
 from fastapi import FastAPI, APIRouter
 from fastapi_cache import FastAPICache
-from fastapi_utils.tasks import repeat_every
 from starlette.middleware.cors import CORSMiddleware
 
 from db.redis import get_redis_backend
-from manager.privoz_order import PrivozManager, PrivozRepository
+from manager.privoz_order import celery
 from routes.users import router as router_users
 from routes.bot import router as router_bot
 from routes.bitrix import router as router_bitrix
@@ -37,14 +36,12 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
+    celery.worker_main(["-A", "manager.privoz_order.celery", "worker", "--loglevel=info", "-B"])
     FastAPICache.init(get_redis_backend(), prefix="fastapi-cache")
 
 
-@app.on_event("startup")
-@repeat_every(seconds=60*60)
-async def parse_privoz():
-    privoz_manager = PrivozManager(PrivozRepository())
-    await privoz_manager.parse_privoz()
+def test():
+    print(123)
 
 
 @router.get("/")
