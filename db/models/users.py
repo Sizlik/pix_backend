@@ -14,6 +14,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     bitrix_client_id = Column(Integer)
     moysklad_counterparty_id = Column(UUID)
     moysklad_counterparty_meta = Column(JSON)
+    telegram_id = Column(Integer)
 
 
 async def get_user_db(session: AsyncSession = Depends(get_async_session)):

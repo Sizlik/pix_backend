@@ -41,3 +41,13 @@ async def get_me(
         await user_manager.update(user_update_data, user)
 
     return user
+
+
+@router.put("/telegram/{telegram_id}", tags=["users"])
+async def set_telegram_id(
+        telegram_id: int,
+        user: User = Depends(current_user_dependency),
+        user_manager: UserManager = Depends(get_user_manager),
+):
+    user_update_data = UserUpdate(telegram_id=telegram_id)
+    return await user_manager.update(user_update_data, user)

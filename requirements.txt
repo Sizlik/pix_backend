@@ -6,6 +6,7 @@ alembic==1.12.1
 amqp==5.2.0
 annotated-types==0.6.0
 anyio==3.7.1
+APScheduler==3.10.4
 async-timeout==4.0.3
 asyncio==3.4.3
 asyncpg==0.29.0
@@ -13,7 +14,6 @@ attrs==23.2.0
 bcrypt==4.0.1
 beautifulsoup4==4.12.2
 billiard==4.2.0
-celery==5.3.6
 certifi==2023.11.17
 cffi==1.16.0
 charset-normalizer==3.3.2
@@ -29,7 +29,6 @@ fastapi==0.104.1
 fastapi-cache2==0.2.1
 fastapi-users==12.1.2
 fastapi-users-db-sqlalchemy==6.0.1
-flower==2.0.1
 frozenlist==1.4.1
 greenlet==3.0.1
 h11==0.14.0
@@ -69,6 +68,7 @@ time-machine==2.13.0
 tornado==6.4
 typing_extensions==4.8.0
 tzdata==2023.3
+tzlocal==5.2
 urllib3==2.1.0
 uvicorn==0.24.0.post1
 uvloop==0.19.0
