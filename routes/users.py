@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import BearerTransport, AuthenticationBackend
 
+from bot.sender import telegram_sender
 from dependecies import moysklad
 from db.models.users import User
 from db.redis import get_redis_strategy
@@ -50,4 +51,5 @@ async def set_telegram_id(
         user_manager: UserManager = Depends(get_user_manager),
 ):
     user_update_data = UserUpdate(telegram_id=telegram_id)
-    return await user_manager.update(user_update_data, user)
+    await user_manager.update(user_update_data, user)
+    await telegram_sender.send_user_message(telegram_id, f"Вы успешно связали аккаунт {user.email}")
