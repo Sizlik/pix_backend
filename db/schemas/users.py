@@ -23,5 +23,6 @@ class UserUpdate(schemas.BaseUserUpdate):
     moysklad_counterparty_id: Optional[uuid.UUID] = None
     moysklad_counterparty_meta: Optional[dict] = None
     balance: Optional[int] = None
+    telegram_id: Optional[int] = None
 
 

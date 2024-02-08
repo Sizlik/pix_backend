@@ -182,6 +182,9 @@ class CustomerOrderManager:
     async def delete_order_position_by_id(self, order_id, position_id):
         return await self.__repo.delete(order_id, link=f"/positions/{position_id}")
 
+    async def get_orders(self):
+        return await self.__repo.read_all(filter="&limit=100&expand=state&order=created,desc")
+
 
 class InvoiceOutManager:
     def __init__(self, repo: AbstractRepository):

@@ -1,16 +1,17 @@
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, APIRouter
 from fastapi_cache import FastAPICache
 from starlette.middleware.cors import CORSMiddleware
 
 from db.redis import get_redis_backend
-from manager.privoz_order import celery
 from routes.users import router as router_users
 from routes.bot import router as router_bot
 from routes.bitrix import router as router_bitrix
 from routes.payments import router as router_payment
 from routes.orders import router as router_orders
 from routes.chat import router as router_chat
-
+from utils.celery_worker import change_states_on_moysklad
 
 app = FastAPI()
 router = APIRouter(prefix="/api_v1")
@@ -36,6 +37,9 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(change_states_on_moysklad, "interval", hours=1)
+    scheduler.start()
     FastAPICache.init(get_redis_backend(), prefix="fastapi-cache")
 
 

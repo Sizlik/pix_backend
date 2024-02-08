@@ -25,5 +25,8 @@ class Sender:
     async def send_group_message(self, text):
         await self.bot.send_message(self.chat_id, text, parse_mode=ParseMode.HTML)
 
+    async def send_user_message(self, user_id, text):
+        await self.bot.send_message(user_id, text, parse_mode=ParseMode.HTML)
+
 
 telegram_sender = Sender()
