@@ -37,7 +37,7 @@ async def create_order(
         })
 
     customer_orders = await customer_order_manager.create_order_by_request(order_items, user)
-    await telegram_sender.send_group_message(f'<a href="{customer_orders.get("meta").get("uuidHref")}">Новый заказ</a>\nПользователь: {user.id}')
+    await telegram_sender.send_group_message(f'<a href="{customer_orders.get("meta").get("uuidHref")}">Новый заказ</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
     return customer_orders
 
 
@@ -45,7 +45,7 @@ async def create_order(
 async def change_order_state(order_id, user: User = Depends(current_user_dependency), customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),):
     order = await customer_order_manager.change_state(order_id, "Подтвержден клиентом")
     await telegram_sender.send_group_message(
-        f'<a href="{order.get("meta").get("uuidHref")}">Заказ подтверждён</a>\nПользователь: {user.id}')
+        f'<a href="{order.get("meta").get("uuidHref")}">Заказ подтверждён</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
     return order
 
 
@@ -125,7 +125,7 @@ async def update_order_position(
         })
 
     customer_order = await customer_order_manager.add_order_position(order_id, order_items)
-    await telegram_sender.send_group_message(f'<a href="https://online.moysklad.ru/app/#customerorder/edit?id={order_id}">В заказ добавлена позиция</a>\nПользователь: {user.id}')
+    await telegram_sender.send_group_message(f'<a href="https://online.moysklad.ru/app/#customerorder/edit?id={order_id}">В заказ добавлена позиция</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
     return customer_order
 
 
@@ -136,7 +136,7 @@ async def cancel_order(
         customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
 ):
     order = await customer_order_manager.change_state(order_id, "Отменен")
-    await telegram_sender.send_group_message(f'<a href="{order.get("meta").get("uuidHref")}">Заказ отменён</a>\nПользователь: {user.id}')
+    await telegram_sender.send_group_message(f'<a href="{order.get("meta").get("uuidHref")}">Заказ отменён</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
     return order
 
 

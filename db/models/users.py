@@ -15,6 +15,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     moysklad_counterparty_id = Column(UUID)
     moysklad_counterparty_meta = Column(JSON)
     telegram_id = Column(Integer)
+    name_id = Column(Integer, autoincrement=True, server_default='1')
 
 
 async def get_user_db(session: AsyncSession = Depends(get_async_session)):

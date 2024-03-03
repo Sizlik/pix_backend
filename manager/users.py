@@ -21,7 +21,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         counterparty_manager = await moysklad.get_counterparty_manager()
 
         counterparty_data = schemas_moysklad.CounterpartyCreate(
-            name=f"Клиент - {user.id}",
+            name=f"{user.first_name} Клиент #{user.name_id}",
             description=f"Информация с сайта pixlogistics:\nid = {user.id}",
             email="",
             phone=""
@@ -31,7 +31,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             moysklad_counterparty_id=moysklad_counterparty.get("id"),
             moysklad_counterparty_meta=moysklad_counterparty.get("meta")
         )
-        await telegram_sender.send_group_message(f'<a href="{moysklad_counterparty.get("meta").get("uuidHref")}">Новый пользователь на сайте!</a>\nID: {user.id}')
+        await telegram_sender.send_group_message(f'<a href="{moysklad_counterparty.get("meta").get("uuidHref")}">Новый пользователь на сайте!</a>\n{user.first_name} Клиент #{user.name_id}')
         await self.update(user_update_data, user, request=request)
 
 

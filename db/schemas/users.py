@@ -12,7 +12,7 @@ class BaseUser(BaseModel):
 
 
 class UserRead(schemas.BaseUser[uuid.UUID], BaseUser):
-    pass
+    name_id: int
 
 
 class UserCreate(schemas.BaseUserCreate, BaseUser):
