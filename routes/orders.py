@@ -41,6 +41,11 @@ async def create_order(
     return customer_orders
 
 
+@router.get("/test/metadata")
+async def get_metadata_test(customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)):
+    return await customer_order_manager.get_export_template()
+
+
 @router.put("/state/{order_id}")
 async def change_order_state(order_id, user: User = Depends(current_user_dependency), customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),):
     order = await customer_order_manager.change_state(order_id, "Подтвержден клиентом")
