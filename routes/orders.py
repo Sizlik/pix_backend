@@ -4,7 +4,7 @@ from typing import Annotated
 
 import pandas as pd
 import requests
-from fastapi import APIRouter, Depends, File, UploadFile, Form, Body
+from fastapi import APIRouter, Depends, File, UploadFile, Form, Body, Response
 from pydantic import BaseModel
 
 from bot.sender import telegram_sender
@@ -41,9 +41,14 @@ async def create_order(
     return customer_orders
 
 
-@router.get("/test/metadata")
-async def get_metadata_test(customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)):
-    return await customer_order_manager.get_export_template()
+@router.get("/test/metadata/{id}")
+async def get_metadata_test(id: str, customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)):
+    # return await customer_order_manager.get_export_template()
+    file = await customer_order_manager.export_template(id)
+    print(file)
+    headers = {"Content-Disposition": "inline; filename=sample.pdf"}
+    response = Response(file, media_type="application/pdf", headers=headers)
+    return response
 
 
 @router.put("/state/{order_id}")

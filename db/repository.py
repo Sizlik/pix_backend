@@ -44,6 +44,10 @@ class AbstractRepository(ABC):
     async def upsert(self, array_data):
         raise NotImplementedError
 
+    @abstractmethod
+    async def export(self, **kwargs):
+        raise NotImplementedError
+
 
 class MoySkladRepository(AbstractRepository):
     model = None
@@ -59,6 +63,7 @@ class MoySkladRepository(AbstractRepository):
         return requests.get(self.__link + self.model + "/" + str(id) + "?" + kwargs.get("link", ""), headers=self.__headers).json()
 
     async def create(self, **kwargs):
+        print(kwargs)
         return requests.post(self.__link + self.model + "/" + kwargs.get("link", ""), headers=self.__headers, json=kwargs).json()
 
     async def create_multiply(self, rows: list):
@@ -78,6 +83,9 @@ class MoySkladRepository(AbstractRepository):
 
     async def upsert(self, **kwargs):
         pass
+
+    async def export(self, **kwargs):
+        return requests.post(self.__link + self.model + "/" + kwargs.get("link", ""), headers=self.__headers, json=kwargs).content
 
 
 class SQLAlchemyRepository(AbstractRepository):
@@ -143,3 +151,5 @@ class SQLAlchemyRepository(AbstractRepository):
     async def delete(self, id, **kwargs):
         pass
 
+    async def export(self, kwargs):
+        pass

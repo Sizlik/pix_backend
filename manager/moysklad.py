@@ -118,6 +118,10 @@ class CustomerOrderManager:
     async def get_export_template(self):
         return await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
 
+    async def export_template(self, id):
+        template = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+        return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")
+
     async def change_state(self, id, state_name):
         metadata = await self.get_metadata()
         for state in metadata.get("states"):
