@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from manager.moysklad import InvoiceOutManager, CustomerOrderManager
 from dependecies import (orders as dependency_orders, bitrix as dependency_bitrix, moysklad as dependency_moysklad)
-from manager.orders import OrderManager, OrderItemsManager
+from manager.orders import OrderManager, OrderItemsManager, OrderActionsManager
 
 router = APIRouter(prefix="/webhooks", tags=["Integration Webhooks"])
 
@@ -60,3 +60,11 @@ async def accepted_status_order_webhook(
     await order_manager.update_order(order.id, {"moysklad_customer_order_state": "Подтверждён"})
 
 
+@router.post("/state_changed")
+async def state_changed_webhook(
+        id=Query(uuid.UUID),
+        order_actions_manager: OrderActionsManager = Depends(dependency_orders.get_order_actions_manager),
+        moysklad_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
+):
+    moysklad_order = await moysklad_order_manager.get_order_by_id(id)
+    await order_actions_manager.create_action(id, moysklad_order.get("state").get("name"))

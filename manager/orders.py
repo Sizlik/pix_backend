@@ -1,7 +1,7 @@
 import json
 import uuid
 
-from db.models.orders import Order, OrderItems
+from db.models.orders import Order, OrderItems, OrderActions
 from db.models.users import User
 from db.repository import SQLAlchemyRepository, AbstractRepository
 from db.schemas.orders import OrderCreate, OrderItemCreate, MoySkladIntegrationOrder, MoySkladIntegrationCustomerOrder
@@ -13,6 +13,10 @@ class OrderRepository(SQLAlchemyRepository):
 
 class OrderItemsRepository(SQLAlchemyRepository):
     model = OrderItems
+
+
+class OrderActionsRepository(SQLAlchemyRepository):
+    model = OrderActions
 
 
 class OrderManager:
@@ -75,3 +79,12 @@ class OrderItemsManager:
         return await self.order_repo.update(id, **update_data)
 
 
+class OrderActionsManager:
+    def __init__(self, repo: AbstractRepository):
+        self.__repo = repo
+
+    async def create_action(self, order_id: str, new_state: str):
+        return await self.__repo.create(order_id=order_id, new_state=new_state)
+
+    async def get_order_actions(self, order_id: str):
+        return await self.__repo.read_all(OrderActions.order_id == order_id)

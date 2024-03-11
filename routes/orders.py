@@ -11,7 +11,7 @@ from bot.sender import telegram_sender
 from db.models.users import User
 from db.schemas.moysklad import ProductFolderCreate
 from db.schemas.orders import OrderCreate
-from manager.orders import OrderManager, OrderItemsManager
+from manager.orders import OrderManager, OrderItemsManager, OrderActionsManager
 from manager.moysklad import CustomerOrderManager, ProductManager, ProductFolderManager, PurchaseOrderManager, \
     InvoiceOutManager
 from manager.privoz_order import PrivozManager
@@ -99,6 +99,15 @@ async def test(
     privoz_manager: PrivozManager = Depends(dependency_privoz.get_privoz_manager)
 ):
     return await privoz_manager.parse_privoz()
+
+
+@router.get("/actions/{order_id}")
+async def get_user_order_actions(
+    order_id: uuid.UUID,
+    user: User = Depends(current_user_dependency),
+    order_actions_manager: OrderActionsManager = Depends(dependency_orders.get_order_actions_manager),
+):
+    return await order_actions_manager.get_order_actions(order_id)
 
 
 @router.get("/{order_id}")

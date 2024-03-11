@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, ForeignKey, UUID, String, Integer, Boolean, JSON, Float
+from sqlalchemy import Column, ForeignKey, UUID, String, Integer, Boolean, JSON, Float, func, DateTime
 
 from db.postgres import Base
 
@@ -24,6 +24,15 @@ class Order(Base):
     moysklad_customer_order_state = Column(String, default="Новый")
 
     user_id = Column(ForeignKey("user.id"), nullable=False)
+
+
+class OrderActions(Base):
+    __tablename__ = "order_actions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    new_state = Column(String)
+    order_id = Column(UUID)
+    date = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class OrderItems(Base):
