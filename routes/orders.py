@@ -12,7 +12,8 @@ from db.models.users import User
 from db.schemas.moysklad import ProductFolderCreate
 from db.schemas.orders import OrderCreate
 from manager.orders import OrderManager, OrderItemsManager
-from manager.moysklad import CustomerOrderManager, ProductManager, ProductFolderManager
+from manager.moysklad import CustomerOrderManager, ProductManager, ProductFolderManager, PurchaseOrderManager, \
+    InvoiceOutManager
 from manager.privoz_order import PrivozManager
 from routes.users import current_user_dependency
 from dependecies import (orders as dependency_orders, bitrix as dependency_bitrix, moysklad as dependency_moysklad, privoz_orders as dependency_privoz)
@@ -41,11 +42,25 @@ async def create_order(
     return customer_orders
 
 
-@router.get("/test/metadata/{id}")
-async def get_metadata_test(id: str, customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)):
-    # return await customer_order_manager.get_export_template()
+@router.get("/export/{id}")
+async def export_pdf(id: str, customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)):
     file = await customer_order_manager.export_template(id)
-    print(file)
+    headers = {"Content-Disposition": "inline; filename=sample.pdf"}
+    response = Response(file, media_type="application/pdf", headers=headers)
+    return response
+
+
+@router.get("/purchaseorder/export/{id}")
+async def export_pdf_purchaseorder(id: str, purchase_order_manager: PurchaseOrderManager = Depends(dependency_moysklad.get_purchase_order_manager)):
+    file = await purchase_order_manager.export_template(id)
+    headers = {"Content-Disposition": "inline; filename=sample.pdf"}
+    response = Response(file, media_type="application/pdf", headers=headers)
+    return response
+
+
+@router.get("/invoiceout/export/{id}")
+async def export_pdf_invoice_out(id: str, invoice_out_manager: InvoiceOutManager = Depends(dependency_moysklad.get_invoice_out_manager)):
+    file = await invoice_out_manager.export_template(id)
     headers = {"Content-Disposition": "inline; filename=sample.pdf"}
     response = Response(file, media_type="application/pdf", headers=headers)
     return response
@@ -71,7 +86,8 @@ async def get_user_orders(
     for order in customer_orders.get("rows"):
         if order.get("shipmentAddressFull", {}).get("comment") and order.get("shipmentAddressFull", {}).get("comment").startswith("#"):
             privoz_order = await privoz_manager.get_order_by_id(order.get("shipmentAddressFull").get("comment"))
-            order.update({"state": {"name": privoz_order.state}})
+            if privoz_order:
+                order.update({"state": {"name": privoz_order.state}})
         orders.append(order)
 
     return orders

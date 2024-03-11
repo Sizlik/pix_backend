@@ -39,6 +39,7 @@ app.add_middleware(
 async def startup():
     scheduler = AsyncIOScheduler()
     scheduler.add_job(change_states_on_moysklad, "interval", hours=1)
+    # scheduler.add_job(change_states_on_moysklad, "interval", minutes=1)
     scheduler.start()
     FastAPICache.init(get_redis_backend(), prefix="fastapi-cache")
 

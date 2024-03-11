@@ -50,6 +50,10 @@ class PaymentInRepository(MoySkladRepository):
     model = "entity/paymentin"
 
 
+class PurchaseOrderRepository(MoySkladRepository):
+    model = "entity/purchaseorder"
+
+
 class CounterpartyManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
@@ -114,9 +118,6 @@ class CustomerOrderManager:
 
     async def get_metadata(self):
         return await self.__repo.read_all(metadata="/metadata")
-
-    async def get_export_template(self):
-        return await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
 
     async def export_template(self, id):
         template = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
@@ -197,6 +198,10 @@ class InvoiceOutManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
 
+    async def export_template(self, id):
+        template = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+        return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")
+
     async def get_user_invoices(self, user: User):
         return await self.__repo.read_all(f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}")
 
@@ -229,3 +234,11 @@ class PaymentInManager:
 #     def __init__(self, repo: AbstractRepository):
 #         self.__repo = repo
 
+
+class PurchaseOrderManager:
+    def __init__(self, repo: AbstractRepository):
+        self.__repo = repo
+
+    async def export_template(self, id):
+        template = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+        return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")

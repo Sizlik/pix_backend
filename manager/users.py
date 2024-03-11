@@ -8,13 +8,15 @@ from fastapi_users import BaseUserManager, UUIDIDMixin, models
 from starlette.requests import Request
 
 from bot.sender import telegram_sender
-from db.models.users import get_user_db, User
+from db.models.users import get_user_db, User, UserDatabase
 from db.schemas.users import UserUpdate
 from db.schemas import moysklad as schemas_moysklad
 from dependecies import moysklad
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
+    user_db: UserDatabase
+
     async def on_after_register(
         self, user: models.UP, request: Optional[Request] = None
     ) -> None:
