@@ -28,22 +28,35 @@ async def websocket_connection(websocket: WebSocket, redis_strategy: RedisStrate
         await websocket.close()
         return
 
-    room_id = websocket.query_params["room"]
+    room_id = websocket.query_params.get("room", str(user.id))
 
     await chat_manager.connect(room_id, websocket)
 
     try:
         while True:
             ws_data = await websocket.receive_json()
+            if not ws_data.get("to_chat_room_id"):
+                ws_data["to_chat_room_id"] = user.id
+
             data = {
                 "message": ws_data["message"],
                 "from_user_id": str(user.id),
-                "to_chat_room_id": ws_data["to_chat_room_id"],
+                "to_chat_room_id": str(ws_data["to_chat_room_id"]),
             }
             await chat_manager.send_message_from_client(data, room_id, user)
 
     except WebSocketDisconnect:
         chat_manager.disconnect(room_id, websocket)
+
+
+@router.post("/send_message")
+async def websocket_connection(message: str = Body(),
+                               to_chat_room: str = Body(),
+                               user=Depends(current_user_dependency),
+                               chat_manager: ChatManager = Depends(get_chat_manager)):
+    if user.email == "bot@pixlogistic.com":
+        data = {"message": message, "from_user_id": str(user.id), "to_chat_room_id": to_chat_room}
+        await chat_manager.send_message_from_client(data, to_chat_room, user)
 
 
 @router.post("/{order_id}")
@@ -66,6 +79,15 @@ async def create_order_chat_room(order_id: uuid.UUID, user: User = Depends(curre
 # async def get_chat_rooms(chat_room_manager: ChatRoomManager = Depends(get_chat_room_manager)):
 #     return await chat_room_manager.get_all()
 
+@router.get("/messages")
+async def get_messages_by_user_id(user: User = Depends(current_user_dependency), message_manager: MessageManager = Depends(get_message_manager)):
+    return await message_manager.get_messages_by_user_id(user.id)
+
+
+@router.get("/messages/{chat_id}")
+async def get_messages_by_chat_id(chat_id: UUID, user: User = Depends(current_user_dependency), message_manager: MessageManager = Depends(get_message_manager)):
+    return await message_manager.get_messages_by_chat_id(chat_id)
+
 
 @router.get("/{order_id}")
 async def get_order_chat_room(order_id: uuid.UUID, user: User = Depends(current_user_dependency),
@@ -87,8 +109,5 @@ async def get_chat_rooms(user: User = Depends(current_user_dependency),
 #     return await message_manager.get_messages_by_chat_id(chat_room.id)
 
 
-@router.get("/messages/{chat_id}")
-async def get_messages_by_chat_id(chat_id: UUID, user: User = Depends(current_user_dependency), message_manager: MessageManager = Depends(get_message_manager)):
-    return await message_manager.get_messages_by_chat_id(chat_id)
 
 

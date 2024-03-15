@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import WebSocket
 from sqlalchemy import and_
 
+from bot.sender import telegram_sender
 from db.models.chat import ChatRoom, Message
 from db.models.users import User
 from db.repository import SQLAlchemyRepository, AbstractRepository
@@ -55,6 +56,9 @@ class MessageManager:
     async def get_messages_by_chat_id(self, chat_id: UUID):
         return await self.__repo.read_all(Message.to_chat_room_id == chat_id, Message.time_created.desc())
 
+    async def get_messages_by_user_id(self, user_id: UUID):
+        return await self.__repo.read_all(Message.to_chat_room_id == user_id, Message.time_created.desc())
+
 
 @singleton
 class ChatManager:
@@ -76,10 +80,10 @@ class ChatManager:
     async def send_message_from_client(self, data, room_id, user):
         await self.message_manager.create_one(data)
         data["first_name"] = user.first_name
+        if user.email != "bot@pixlogistic.com":
+            await telegram_sender.send_chat_message(data["message"], user, data["to_chat_room_id"])
         for i in self.connections[room_id]:
             await i.send_json(data)
 
-    async def send_message_to_client(self, message):
-        pass
 
 

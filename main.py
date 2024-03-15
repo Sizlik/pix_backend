@@ -2,6 +2,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, APIRouter
 from fastapi_cache import FastAPICache
+from fastapi_socketio import SocketManager
 from starlette.middleware.cors import CORSMiddleware
 
 from db.redis import get_redis_backend

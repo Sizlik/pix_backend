@@ -17,7 +17,7 @@ class Message(Base):
     time_updated = Column(DateTime(), onupdate=func.now())
 
     from_user_id = Column(ForeignKey("user.id"))
-    to_chat_room_id = Column(ForeignKey("chat_room.id"))
+    to_chat_room_id = Column(UUID)
 
     first_name = column_property(
         select(User.first_name).where(User.id == from_user_id).limit(1).as_scalar()
