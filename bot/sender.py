@@ -6,6 +6,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from db.models.users import User
 from db.schemas.transactions import AcceptTransaction
+from manager.moysklad import CustomerOrderManager, CustomerOrderRepository
+
+customer_order_manager = CustomerOrderManager(CustomerOrderRepository())
 
 
 class Sender:
@@ -34,7 +37,12 @@ class Sender:
         await self.bot.send_message(user_id, text, parse_mode=ParseMode.HTML)
 
     async def send_chat_message(self, text, user: User, chat_id):
-        message = f"{chat_id}\nПользователь: {user.first_name} Клиент #{user.name_id}\nНаписал в поддержку:\n\n{text}"
+        if str(chat_id) != str(user.id):
+            order = await customer_order_manager.get_order_by_id(chat_id)
+            order.get("name")
+            message = f'{chat_id}\nПользователь: {user.first_name}\nЗаказ: <a href="https://online.moysklad.ru/app/#customerorder/edit?id={chat_id}">#{order.get("name")}</a>\nКлиент #{user.name_id}\nНаписал в поддержку:\n\n{text}'
+        else:
+            message = f"{chat_id}\nПользователь: {user.first_name} Клиент #{user.name_id}\nНаписал в поддержку:\n\n{text}"
         await self.bot.send_message(self.help_chat_id, message, reply_markup=await self.chat_keyboard())
 
 
