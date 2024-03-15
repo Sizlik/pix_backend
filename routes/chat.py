@@ -29,7 +29,7 @@ async def websocket_connection(websocket: WebSocket, redis_strategy: RedisStrate
         return
 
     room_id = websocket.query_params.get("room", str(user.id))
-
+    print(room_id)
     await chat_manager.connect(room_id, websocket)
 
     try:

@@ -72,17 +72,23 @@ class ChatManager:
         await websocket.accept()
         if room_id not in self.connections:
             self.connections[room_id] = []
-        self.connections[room_id].append(websocket)
+        elif len(self.connections[room_id]):
+            await self.connections[room_id][0].close()
+        self.connections[room_id] = [websocket]
 
     def disconnect(self, room_id, websocket: WebSocket):
-        self.connections[room_id].remove(websocket)
+        try:
+            self.connections[room_id].remove(websocket)
+        except:
+            pass
 
     async def send_message_from_client(self, data, room_id, user):
+        print(self.connections)
         await self.message_manager.create_one(data)
         data["first_name"] = user.first_name
         if user.email != "bot@pixlogistic.com":
             await telegram_sender.send_chat_message(data["message"], user, data["to_chat_room_id"])
-        for i in self.connections[room_id]:
+        for i in self.connections.get(room_id):
             await i.send_json(data)
 
 
