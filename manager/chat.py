@@ -59,6 +59,9 @@ class MessageManager:
     async def get_messages_by_user_id(self, user_id: UUID):
         return await self.__repo.read_all(Message.to_chat_room_id == user_id, Message.time_created.desc())
 
+    async def get_message_by_id(self, id):
+        return await self.__repo.read_one(id)
+
 
 @singleton
 class ChatManager:
@@ -84,12 +87,12 @@ class ChatManager:
 
     async def send_message_from_client(self, data, room_id, user):
         print(self.connections)
-        await self.message_manager.create_one(data)
+        message = await self.message_manager.create_one(data)
         data["first_name"] = user.first_name
         if user.email != "bot@pixlogistic.com":
             await telegram_sender.send_chat_message(data["message"], user, data["to_chat_room_id"])
-        for i in self.connections.get(room_id):
+        for i in self.connections.get(room_id, ""):
             await i.send_json(data)
-
+        return message
 
 

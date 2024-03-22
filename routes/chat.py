@@ -7,10 +7,14 @@ import requests
 from fastapi import APIRouter, WebSocket, Depends, WebSocketDisconnect, Body
 from fastapi_users.authentication import RedisStrategy
 
-from db.models.users import User
+from bot.sender import telegram_sender
+from db.models.users import User, UserDatabase, get_user_db
 from db.redis import get_redis_strategy
+from db.schemas.notifications import NotificationCreate, NotificationTypes
 from dependecies.chat import get_chat_manager, get_chat_room_manager, get_message_manager
+from dependecies.notifications import get_notification_manager
 from manager.chat import ChatManager, ChatRoomManager, MessageManager
+from manager.notifications import NotificationManager
 from manager.users import get_user_manager
 from routes.users import current_user_dependency
 
@@ -50,13 +54,21 @@ async def websocket_connection(websocket: WebSocket, redis_strategy: RedisStrate
 
 
 @router.post("/send_message")
-async def websocket_connection(message: str = Body(),
-                               to_chat_room: str = Body(),
-                               user=Depends(current_user_dependency),
-                               chat_manager: ChatManager = Depends(get_chat_manager)):
+async def send_message_by_endpoint(message: str = Body(),
+                                   to_chat_room: str = Body(),
+                                   client_id: str = Body(),
+                                   user=Depends(current_user_dependency),
+                                   chat_manager: ChatManager = Depends(get_chat_manager),
+                                   notification_manager: NotificationManager = Depends(get_notification_manager),
+                                   user_db: UserDatabase = Depends(get_user_db)):
     if user.email == "bot@pixlogistic.com":
         data = {"message": message, "from_user_id": str(user.id), "to_chat_room_id": to_chat_room}
-        await chat_manager.send_message_from_client(data, to_chat_room, user)
+        message_id = await chat_manager.send_message_from_client(data, to_chat_room, user)
+        notification_data = NotificationCreate(user_id=client_id, type=NotificationTypes.MESSAGE.value if client_id == to_chat_room else NotificationTypes.ORDER_MESSAGE.value, object_id=str(message_id))
+        await notification_manager.create_notification(notification_data)
+        client = await user_db.get(client_id)
+        if client.telegram_id:
+            await telegram_sender.send_user_message(client.telegram_id, f'У вас новое сообщение от менеджера на <a href="https://client.pixlogistic.com/dashboard/messages">сайте</a>\n\n{message}', disable_web_page_preview=True)
 
 
 @router.post("/{order_id}")

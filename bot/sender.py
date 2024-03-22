@@ -33,14 +33,14 @@ class Sender:
     async def send_group_message(self, text):
         await self.bot.send_message(self.chat_id, text, parse_mode=ParseMode.HTML)
 
-    async def send_user_message(self, user_id, text):
-        await self.bot.send_message(user_id, text, parse_mode=ParseMode.HTML)
+    async def send_user_message(self, user_id, text, disable_web_page_preview=False):
+        await self.bot.send_message(user_id, text, parse_mode=ParseMode.HTML, disable_web_page_preview=disable_web_page_preview)
 
     async def send_chat_message(self, text, user: User, chat_id):
         if str(chat_id) != str(user.id):
             order = await customer_order_manager.get_order_by_id(chat_id)
             order.get("name")
-            message = f'{chat_id}\nПользователь: {user.first_name}\nЗаказ: <a href="https://online.moysklad.ru/app/#customerorder/edit?id={chat_id}">#{order.get("name")}</a>\nКлиент #{user.name_id}\nНаписал в поддержку:\n\n{text}'
+            message = f'{chat_id}\nid: {user.id}\nПользователь: {user.first_name}\nЗаказ: <a href="https://online.moysklad.ru/app/#customerorder/edit?id={chat_id}">#{order.get("name")}</a>\nКлиент #{user.name_id}\nНаписал в поддержку:\n\n{text}'
         else:
             message = f"{chat_id}\nПользователь: {user.first_name} Клиент #{user.name_id}\nНаписал в поддержку:\n\n{text}"
         await self.bot.send_message(self.help_chat_id, message, reply_markup=await self.chat_keyboard())

@@ -93,7 +93,7 @@ class SQLAlchemyRepository(AbstractRepository):
 
     async def read_one(self, id: UUID | int, **kwargs):
         async with async_session_maker() as session:
-            stmt = select(self.model)
+            stmt = select(self.model).where(self.model.id == id)
             res = await session.execute(stmt)
             return res.scalar()
 

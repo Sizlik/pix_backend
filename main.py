@@ -11,6 +11,7 @@ from routes.bitrix import router as router_bitrix
 from routes.payments import router as router_payment
 from routes.orders import router as router_orders
 from routes.chat import router as router_chat
+from routes.notifications import router as router_notifications
 from utils.celery_worker import change_states_on_moysklad
 
 app = FastAPI()
@@ -23,6 +24,7 @@ router.include_router(router_payment)
 router.include_router(router_bitrix)
 router.include_router(router_orders)
 router.include_router(router_chat)
+router.include_router(router_notifications)
 
 app.include_router(router)
 

@@ -2,8 +2,13 @@ import uuid
 
 from fastapi import APIRouter, Depends, Query
 
+from bot.sender import telegram_sender
+from db.models.users import UserDatabase, get_user_db
+from db.schemas.notifications import NotificationCreate, NotificationTypes
+from dependecies.notifications import get_notification_manager
 from manager.moysklad import InvoiceOutManager, CustomerOrderManager
 from dependecies import (orders as dependency_orders, bitrix as dependency_bitrix, moysklad as dependency_moysklad)
+from manager.notifications import NotificationManager
 from manager.orders import OrderManager, OrderItemsManager, OrderActionsManager
 
 router = APIRouter(prefix="/webhooks", tags=["Integration Webhooks"])
@@ -68,3 +73,20 @@ async def state_changed_webhook(
 ):
     moysklad_order = await moysklad_order_manager.get_order_by_id(id)
     await order_actions_manager.create_action(id, moysklad_order.get("state").get("name"))
+
+
+@router.post("/order_wait")
+async def state_changed_webhook(
+        id=Query(uuid.UUID),
+        moysklad_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),
+        notification_manager: NotificationManager = Depends(get_notification_manager),
+        user_db: UserDatabase = Depends(get_user_db),
+):
+    moysklad_order = await moysklad_order_manager.get_order_by_id(id)
+    user = await user_db.get_by_moysklad(moysklad_order.get("agent", {}).get("meta", {}).get("href", "").split("/")[-1])
+    if user and user.telegram_id:
+        await telegram_sender.send_user_message(user.telegram_id, f"<a href='https://client.pixlogistic.com/dashboard/orders/{moysklad_order.get('id')}'>Заказ #{moysklad_order.get('name')}</a> изменил статус на <b>{moysklad_order.state}</b>")
+    notification_data = NotificationCreate(user_id=str(user.id),
+                                           type=NotificationTypes.ORDER_UPDATED.value,
+                                           object_id=str(moysklad_order.get("id")))
+    await notification_manager.create_notification(notification_data)
