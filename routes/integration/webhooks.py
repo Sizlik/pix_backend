@@ -85,7 +85,7 @@ async def state_changed_webhook(
     moysklad_order = await moysklad_order_manager.get_order_by_id(id)
     user = await user_db.get_by_moysklad(moysklad_order.get("agent", {}).get("meta", {}).get("href", "").split("/")[-1])
     if user and user.telegram_id:
-        await telegram_sender.send_user_message(user.telegram_id, f"<a href='https://client.pixlogistic.com/dashboard/orders/{moysklad_order.get('id')}'>Заказ #{moysklad_order.get('name')}</a> изменил статус на <b>{moysklad_order.state}</b>")
+        await telegram_sender.send_user_message(user.telegram_id, f"<a href='https://client.pixlogistic.com/dashboard/orders/{moysklad_order.get('id')}'>Заказ #{moysklad_order.get('name')}</a> изменил статус на <b>{moysklad_order.get('state', {}).get('name')}</b>")
     notification_data = NotificationCreate(user_id=str(user.id),
                                            type=NotificationTypes.ORDER_UPDATED.value,
                                            object_id=str(moysklad_order.get("id")))

@@ -68,7 +68,7 @@ async def send_message_by_endpoint(message: str = Body(),
         await notification_manager.create_notification(notification_data)
         client = await user_db.get(client_id)
         if client.telegram_id:
-            await telegram_sender.send_user_message(client.telegram_id, f'У вас новое сообщение от менеджера на <a href="https://client.pixlogistic.com/dashboard/messages">сайте</a>\n\n{message}', disable_web_page_preview=True)
+            await telegram_sender.send_user_message(client.telegram_id, f'У вас новое сообщение от менеджера на <a href="https://client.pixlogistic.com/dashboard/notifications">сайте</a>\n\n{message}', disable_web_page_preview=True)
 
 
 @router.post("/{order_id}")
