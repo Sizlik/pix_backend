@@ -12,10 +12,10 @@ jobs:
       - name: deploy to server
         uses: appleboy/ssh-action@v0.1.7
         with:
-          host: pixlogistic.com
-          username: root
-          password: s7kNU-Ck.cmRUQ
-          port: 22
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
           script: |
             cd cicd/pix_backend
             git pull --rebase
