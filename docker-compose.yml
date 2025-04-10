@@ -47,32 +47,32 @@ services:
     volumes:
       - pgadmin-data:/var/lib/pgadmin
 
-  mailservice:
-    image: axigen/axigen
-    volumes:
-      - ./mail_data:/axigen/var
-      - ./mail_opt:/var/opt
-      - ./mail_opt2:/axigen/opt
-    ports:
-      - 9443:9443
-      - 993:993
-      - 995:995
-      - 25:25
-      - 465:465
-      - 9000:9000
-      - 7000:7000
+#  mailservice:
+#    image: axigen/axigen
+#    volumes:
+#      - ./mail_data:/axigen/var
+#      - ./mail_opt:/var/opt
+#      - ./mail_opt2:/axigen/opt
+#    ports:
+#      - 9443:9443
+#      - 993:993
+#      - 995:995
+#      - 25:25
+#      - 465:465
+#      - 9000:9000
+#      - 7000:7000
 
-  nginx:
-    image: nginx
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./conf.d:/etc/nginx/conf.d
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /etc/letsencrypt:/etc/nginx/ssl
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+#  nginx:
+#    image: nginx
+#    restart: always
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#    volumes:
+#      - ./conf.d:/etc/nginx/conf.d
+#      - /etc/letsencrypt:/etc/letsencrypt:ro
+#      - /etc/letsencrypt:/etc/nginx/ssl
+#    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
   bot:
     image: logistic_bot:latest
