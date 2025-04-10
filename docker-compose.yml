@@ -62,17 +62,17 @@ services:
 #      - 9000:9000
 #      - 7000:7000
 
-#  nginx:
-#    image: nginx
-#    restart: always
-#    ports:
-#      - "80:80"
-#      - "443:443"
-#    volumes:
-#      - ./conf.d:/etc/nginx/conf.d
-#      - /etc/letsencrypt:/etc/letsencrypt:ro
-#      - /etc/letsencrypt:/etc/nginx/ssl
-#    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+  nginx:
+    image: nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./conf.d:/etc/nginx/conf.d
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /etc/letsencrypt:/etc/nginx/ssl
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
   bot:
     image: logistic_bot:latest
