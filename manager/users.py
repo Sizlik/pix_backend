@@ -66,6 +66,23 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ) -> None:
         await self.request_verify(user, request)
 
+    async def on_after_forgot_password(
+        self, user: models.UP, token: str, request: Optional[Request] = None
+    ) -> None:
+        verification_code = generate_code()
+        redis_key = f"reset:{user.email}:{verification_code}"
+        await redis.set(redis_key, token, ex=300)  # TTL 5 минут
+        send_verification_code(user.email, verification_code)
+
+    async def reset_password(
+        self, token: str, password: str, request: Optional[Request] = None
+    ) -> models.UP:
+        data = await request.json()
+        email = data.get("email")
+        redis_key = f"reset:{email}:{token}"
+        token = await redis.get(redis_key)
+        return await super().reset_password(token, password)
+
 
 async def get_user_manager(user_db=Depends(get_user_db)):
     yield UserManager(user_db)
@@ -102,7 +119,7 @@ def send_verification_code(email: str, code: str):
     ]
     mailer.set_mail_from(mail_from, mail_body)
     mailer.set_mail_to(recipients, mail_body)
-    mailer.set_subject("PixLogistic Подтвердите почту", mail_body)
+    mailer.set_subject("PixLogistic Код подтверждения", mail_body)
     mailer.set_template("jy7zpl99m15l5vx6", mail_body)
     mailer.set_personalization(personalization, mail_body)
 

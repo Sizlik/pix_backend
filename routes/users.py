@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import BearerTransport, AuthenticationBackend
 
@@ -53,3 +53,7 @@ async def set_telegram_id(
     user_update_data = UserUpdate(telegram_id=telegram_id)
     await user_manager.update(user_update_data, user)
     await telegram_sender.send_user_message(telegram_id, f"Вы успешно связали аккаунт {user.email}")
+
+# @router.post("/resetPassword", tags=["users"])
+# async def reset_password(email: Query(), user_manager: UserManager = Depends(get_user_manager)):
+
