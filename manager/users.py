@@ -38,8 +38,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         send_verification_code(user.email, verification_code)
 
     async def on_after_verify(
-        self, user: models.UP, request: Optional[Request] = None
+        self, user: User, request: Optional[Request] = None
     ) -> None:
+        if user.moysklad_counterparty_id:
+            await telegram_sender.send_group_message(f'<a href="{user.moysklad_counterparty_meta.get("uuidHref")}">Пользователь подтвердил почту!</a>\n{user.first_name} Клиент #{user.name_id}')
+            return
+
         counterparty_manager = await moysklad.get_counterparty_manager()
         counterparty_data = schemas_moysklad.CounterpartyCreate(
             name=f"{user.first_name} Клиент #{user.name_id}",
