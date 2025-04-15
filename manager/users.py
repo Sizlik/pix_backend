@@ -1,4 +1,5 @@
 import base64
+import os
 import random
 import uuid
 from typing import Optional
@@ -71,7 +72,7 @@ def generate_code(length=6) -> str:
 
 
 def send_verification_code(email: str, code: str):
-    mailer = emails.NewEmail("mlsn.50253a6ea3b935fe581329e95d8f0a0b59777421336bc7ae93d603c3700ee939")
+    mailer = emails.NewEmail(os.getenv("MAILERSEND_TOKEN"))
 
     # define an empty dict to populate with mail values
     mail_body = {}
