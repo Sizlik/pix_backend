@@ -99,7 +99,7 @@ def send_verification_code(email: str, code: str):
 
     mailer.set_mail_from(mail_from, mail_body)
     mailer.set_mail_to(recipients, mail_body)
-    mailer.set_subject("PixLogistic Подтвердите регистрацию", mail_body)
+    mailer.set_subject("PixLogistic Подтвердите почту", mail_body)
     mailer.set_template("jy7zpl99m15l5vx6", mail_body)
     mailer.set_personalization(personalization, mail_body)
 
