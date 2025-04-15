@@ -1,5 +1,6 @@
+from os import environ
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, APIRouter
 from fastapi_cache import FastAPICache
 from starlette.middleware.cors import CORSMiddleware
@@ -41,6 +42,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
+
     scheduler = AsyncIOScheduler()
     scheduler.add_job(change_states_on_moysklad, "interval", hours=1)
     # scheduler.add_job(change_states_on_moysklad, "interval", minutes=1)
