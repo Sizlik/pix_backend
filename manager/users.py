@@ -20,7 +20,7 @@ from dependecies import moysklad
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     user_db: UserDatabase
-    verification_token_secret = "jlerjgoicnklj324hjdsgo45"
+    verification_token_secret = os.getenv("VERIFICATION_TOKEN_SECRET")
 
     async def verify(self, token: str, request: Optional[Request] = None) -> models.UP:
         data = await request.json()
