@@ -3,6 +3,7 @@ import os
 import uuid
 
 import requests
+from watchfiles import awatch
 
 from db.models.orders import Order, OrderItems
 from db.models.users import User
@@ -29,6 +30,10 @@ class CounterpartyRepository(MoySkladRepository):
 
 class CounterpartyReportRepository(MoySkladRepository):
     model = "report/counterparty"
+
+
+class OperationRepository(MoySkladRepository):
+    model = "entity/operation"
 
 
 class ProductRepository(MoySkladRepository):
@@ -71,6 +76,20 @@ class CounterpartyReportManager:
     async def get_user_counterparty_report(self, user):
         return await self.__repo.read_one(user.moysklad_counterparty_id)
 
+
+class OperationManager:
+    def __init__(self, repo: AbstractRepository):
+        self.__repo = repo
+
+    async def get_operations(self, user):
+        data = await self.__repo.read_all(filter=f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id};type=paymentin;type=demand;type=customerorder")
+        result = {"rows": []}
+        for i in data.get("rows"):
+            if i.get("meta", {}).get("type") == "customerorder":
+                if i.get("state", {}).get("name") != "Подтвержден клиентом":
+                    continue
+            result["rows"].append(i)
+        return result
 
 class ProductFolderManager:
     def __init__(self, repo: AbstractRepository):

@@ -9,7 +9,7 @@ from dependecies import moysklad
 from db.models.users import User
 from db.redis import get_redis_strategy
 from db.schemas.users import UserRead, UserCreate, UserUpdate
-from manager.moysklad import CounterpartyReportManager
+from manager.moysklad import CounterpartyReportManager, OperationManager
 from manager.users import get_user_manager, UserManager
 
 bearer_transport = BearerTransport(tokenUrl="api_v1/users/auth/jwt/login")
@@ -32,16 +32,22 @@ router.include_router(fastapi_users.get_users_router(UserRead, UserUpdate), pref
 @router.get("/updatedMe", tags=["users"])
 async def get_me(
         user: User = Depends(current_user_dependency),
-        counterparty_report_manager: CounterpartyReportManager = Depends(moysklad.get_counterparty_report_manager),
+        operation_manager: OperationManager = Depends(moysklad.get_operation_manager),
         user_manager: UserManager = Depends(get_user_manager),
 ):
-    counterparty_report = await counterparty_report_manager.get_user_counterparty_report(user)
-    user_balance = counterparty_report.get("balance")
+    operations = await operation_manager.get_operations(user)
+    user_balance = sum([x.get("sum") if x.get("meta", {}).get("type") == "paymentin" else -x.get("sum") for x in operations.get("rows")])
     if user_balance is not None and user.balance != user_balance:
         user_update_data = UserUpdate(balance=user_balance)
         await user_manager.update(user_update_data, user)
 
     return user
+
+
+@router.get("/operations", tags=["users"])
+async def get_operations(user: User = Depends(current_user_dependency),
+        operation_manager: OperationManager = Depends(moysklad.get_operation_manager)):
+    return await operation_manager.get_operations(user)
 
 
 @router.put("/telegram/{telegram_id}", tags=["users"])
@@ -53,6 +59,8 @@ async def set_telegram_id(
     user_update_data = UserUpdate(telegram_id=telegram_id)
     await user_manager.update(user_update_data, user)
     await telegram_sender.send_user_message(telegram_id, f"Вы успешно связали аккаунт {user.email}")
+
+
 
 # @router.post("/resetPassword", tags=["users"])
 # async def reset_password(email: Query(), user_manager: UserManager = Depends(get_user_manager)):
