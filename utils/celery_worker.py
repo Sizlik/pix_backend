@@ -27,6 +27,8 @@ async def change_states_on_moysklad():
     with open('test.json', 'w', encoding='utf-8') as f:
         f.write(json.dumps(orders))
     for order in orders.get("rows"):
+        if order == None:
+            continue
         if purchases := order.get("purchaseOrders"):
             purchaseId = purchases[0].get("meta", {}).get("href", "").split("/")[-1]
             purchase = await purchase_order_manager.get_by_id(purchaseId)
@@ -35,6 +37,8 @@ async def change_states_on_moysklad():
         #     print(order.get("shipmentAddressFull").get("comment"))
         #     privoz_order = await privoz_manager.get_order_by_id(order.get("shipmentAddressFull").get("comment"))
             privoz_order = await privoz_manager.get_order_by_id(privoz_number)
+            if privoz_order == None:
+                continue
             if privoz_order.state != order.get("state").get("name"):
                 await customer_order_manager.change_state(order.get("id"), privoz_order.state)
                 async with async_session_maker() as session:
