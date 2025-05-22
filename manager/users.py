@@ -7,7 +7,6 @@ from typing import Optional
 import requests
 from fastapi import Depends
 from fastapi_users import BaseUserManager, UUIDIDMixin, models
-from mailersend import emails
 from starlette.requests import Request
 
 from bot.sender import telegram_sender
@@ -94,34 +93,57 @@ def generate_code(length=6) -> str:
 
 
 def send_verification_code(email: str, code: str):
-    mailer = emails.NewEmail(os.getenv("MAILERSEND_TOKEN"))
-
-    # define an empty dict to populate with mail values
-    mail_body = {}
-
-    mail_from = {
-        "name": "PixLogistic",
-        "email": "info@pixlogistic.com",
+    url = 'https://api.smtp.bz/v1/smtp/send'
+    headers = {
+        'Authorization': os.getenv('MAILERSEND_TOKEN')
     }
 
-    recipients = [
-        {
-            "name": "Recipient",
-            "email": email,
-        }
-    ]
-    personalization = [
-        {
-            "email": email,
-            "data": {
-                "code": code
-            }
-        }
-    ]
-    mailer.set_mail_from(mail_from, mail_body)
-    mailer.set_mail_to(recipients, mail_body)
-    mailer.set_subject("PixLogistic Код подтверждения", mail_body)
-    mailer.set_template("jy7zpl99m15l5vx6", mail_body)
-    mailer.set_personalization(personalization, mail_body)
-
-    mailer.send(mail_body)
+    data = {
+        'name': 'PixLogistic',
+        'from': 'info@pixlogistic.com',
+        'subject': 'PixLogistic Код подтверждения',
+        'to': email,
+        'html': f'''<html>
+                <head></head>
+                <body>
+                    <h2>Ваш код подтверждения</h2>
+                    <p>Пожалуйста, используйте следующий код для завершения регистрации:</p>
+                    <div style="font-size: 24px; font-weight: bold;">{code}</div>
+                    <p>Код действителен в течение 5 минут. Если вы не запрашивали код, просто проигнорируйте это письмо.</p>
+                    <div style="margin-top: 20px; color: #999;">© 2025 PixLogistic. Все права защищены.</div>
+                </body>
+            </html>'''
+    }
+    response = requests.post(url, headers=headers, data=data)
+    print(response.text)
+    # mailer = emails.NewEmail(os.getenv("MAILERSEND_TOKEN"))
+    #
+    # # define an empty dict to populate with mail values
+    # mail_body = {}
+    #
+    # mail_from = {
+    #     "name": "PixLogistic",
+    #     "email": "info@pixlogistic.com",
+    # }
+    #
+    # recipients = [
+    #     {
+    #         "name": "Recipient",
+    #         "email": email,
+    #     }
+    # ]
+    # personalization = [
+    #     {
+    #         "email": email,
+    #         "data": {
+    #             "code": code
+    #         }
+    #     }
+    # ]
+    # mailer.set_mail_from(mail_from, mail_body)
+    # mailer.set_mail_to(recipients, mail_body)
+    # mailer.set_subject("PixLogistic Код подтверждения", mail_body)
+    # mailer.set_template("jy7zpl99m15l5vx6", mail_body)
+    # mailer.set_personalization(personalization, mail_body)
+    #
+    # mailer.send(mail_body)

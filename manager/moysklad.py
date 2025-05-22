@@ -86,7 +86,7 @@ class OperationManager:
         result = {"rows": []}
         for i in data.get("rows"):
             if i.get("meta", {}).get("type") == "customerorder":
-                if i.get("state", {}).get("name") != "Подтвержден клиентом":
+                if i.get("state", {}).get("name").lower() not in ["заказ доставляется", "выдан частично", "склад польша", "склад беларусь", "отгружен", "отгружен частично"]:
                     continue
             result["rows"].append(i)
         return result
@@ -262,3 +262,6 @@ class PurchaseOrderManager:
     async def export_template(self, id):
         template = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
         return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")
+
+    async def get_by_id(self, id):
+        return await self.__repo.read_one(id)
