@@ -48,8 +48,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         counterparty_data = schemas_moysklad.CounterpartyCreate(
             name=f"{user.first_name} Клиент #{user.name_id}",
             description=f"Информация с сайта pixlogistics:\nid = {user.id}",
-            email="",
-            phone=""
+            email=user.email,
+            phone=user.phone_number
         )
         moysklad_counterparty = await counterparty_manager.create_user_counterparty(counterparty_data)
         user_update_data = UserUpdate(
