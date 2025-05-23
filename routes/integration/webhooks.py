@@ -22,6 +22,7 @@ async def created_invoice_webhook(
         order_items_manager: OrderItemsManager = Depends(dependency_orders.get_order_items_manager),
 ):
     invoice = await moysklad_invoice_out_manager.get_invoice_by_id(id)
+    if not invoice and not invoice.get("customerOrder"): return ;
     invoice_positions = await moysklad_invoice_out_manager.get_invoice_positions(id)
     order = await order_manager.get_order_by_moysklad_customer_order_id(invoice["customerOrder"]["meta"]["href"].split("/")[-1])
 

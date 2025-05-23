@@ -85,10 +85,13 @@ class OperationManager:
         data = await self.__repo.read_all(filter=f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id};type=paymentin;type=demand;type=customerorder")
         result = {"rows": []}
         for i in data.get("rows"):
-            if i.get("meta", {}).get("type") == "customerorder":
-                if i.get("state", {}).get("name").lower() not in ["заказ доставляется", "выдан частично", "склад польша", "склад беларусь", "отгружен", "отгружен частично"]:
-                    continue
-            result["rows"].append(i)
+            try:
+                if i.get("meta", {}).get("type") == "customerorder":
+                    if i.get("state", {}).get("name").lower() not in ["заказ доставляется", "выдан частично", "склад польша", "склад беларусь", "отгружен", "отгружен частично"]:
+                        continue
+                result["rows"].append(i)
+            except Exception as e:
+                print(e)
         return result
 
 class ProductFolderManager:
