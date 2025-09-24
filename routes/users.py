@@ -32,11 +32,11 @@ router.include_router(fastapi_users.get_users_router(UserRead, UserUpdate), pref
 @router.get("/updatedMe", tags=["users"])
 async def get_me(
         user: User = Depends(current_user_dependency),
-        operation_manager: OperationManager = Depends(moysklad.get_operation_manager),
+        counterparty_report_manager: CounterpartyReportManager = Depends(moysklad.get_counterparty_report_manager),
         user_manager: UserManager = Depends(get_user_manager),
 ):
-    operations = await operation_manager.get_operations(user)
-    user_balance = sum([x.get("sum") if x.get("meta", {}).get("type") == "paymentin" else -x.get("sum") for x in operations.get("rows")])
+    counterparty_report = await counterparty_report_manager.get_user_counterparty_report(user)
+    user_balance = counterparty_report.get("balance")
     if user_balance is not None and user.balance != user_balance:
         user_update_data = UserUpdate(balance=user_balance)
         await user_manager.update(user_update_data, user)

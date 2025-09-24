@@ -9,15 +9,8 @@ services:
       - ./db_data:/var/lib/postgresql/data/
     restart: always
 
-  redis:
-    image: redis
-    ports:
-      - 6379:6379
-    env_file:
-      - .env
-
   frontend:
-    image: frontend:latest
+    image: frontend_v2:latest
     ports:
       - 3000:3000
     env_file:
@@ -28,13 +21,11 @@ services:
 
   backend:
     image: backend:latest
-    ports:
-      - 8000:8000
+    network_mode: "host"
     env_file:
       - .env
     depends_on:
       - database
-      - redis
     restart: always
 
   pgadmin:
@@ -62,17 +53,18 @@ services:
 #      - 9000:9000
 #      - 7000:7000
 
-  nginx:
-    image: nginx
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./conf.d:/etc/nginx/conf.d
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /etc/letsencrypt:/etc/nginx/ssl
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+#  nginx:
+#    image: nginx
+#    restart: always
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#    volumes:
+#      - ./conf.d:/etc/nginx/conf.d
+#      - /etc/letsencrypt:/etc/letsencrypt:ro
+#      - /etc/letsencrypt:/etc/nginx/ssl
+#      - ./html:/usr/share/nginx/html
+#    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
   bot:
     image: logistic_bot:latest
