@@ -3,16 +3,21 @@ import socket
 
 import pytest
 from aiohttp.abc import AbstractResolver
+from fastapi.testclient import TestClient
 from yarl import URL
 
+from config import Settings
 from db.link_preview_repository import (
     MAX_HTML_BYTES,
     LinkPreviewRepository,
     PublicOnlyResolver,
     validate_url_target,
 )
+from dependecies.link_preview import get_link_preview_manager
 from errors import LinkPreviewValidationError
+from main import create_app
 from manager.link_preview import MAX_TITLE_LENGTH, LinkPreviewManager, extract_title
+from routes.users import current_user_dependency
 
 
 class StubLinkPreviewSource:
@@ -88,6 +93,26 @@ class FakeSession:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class StubLinkPreviewManager:
+    def __init__(self, title: str | None = "Example product", error: Exception | None = None):
+        self.title = title
+        self.error = error
+        self.urls: list[str] = []
+
+    async def get_title(self, url: str) -> str | None:
+        self.urls.append(url)
+        if self.error:
+            raise self.error
+        return self.title
+
+
+def link_preview_client(manager: StubLinkPreviewManager):
+    app = create_app(Settings(_env_file=None, app_env="test"))
+    app.dependency_overrides[current_user_dependency] = lambda: object()
+    app.dependency_overrides[get_link_preview_manager] = lambda: manager
+    return TestClient(app)
 
 
 def test_extract_title_decodes_entities_and_collapses_whitespace():
@@ -273,3 +298,58 @@ async def test_repository_turns_dns_failure_into_null_fallback():
     )
 
     assert await repository.fetch_html("https://example.com/item") is None
+
+
+def test_link_title_endpoint_returns_typed_title_without_live_http():
+    manager = StubLinkPreviewManager()
+
+    with link_preview_client(manager) as client:
+        response = client.post(
+            "/api_v1/link-preview/title",
+            json={"url": "https://example.com/item"},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"title": "Example product"}
+    assert manager.urls == ["https://example.com/item"]
+
+
+def test_link_title_endpoint_maps_disallowed_destination_to_sanitized_422():
+    manager = StubLinkPreviewManager(error=LinkPreviewValidationError())
+
+    with link_preview_client(manager) as client:
+        response = client.post(
+            "/api_v1/link-preview/title",
+            json={"url": "https://example.com/redirect"},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "URL is not allowed"}
+
+
+def test_link_title_endpoint_rejects_credentials_before_manager_call():
+    manager = StubLinkPreviewManager()
+
+    with link_preview_client(manager) as client:
+        response = client.post(
+            "/api_v1/link-preview/title",
+            json={"url": "https://user:password@example.com/item"},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert response.status_code == 422
+    assert manager.urls == []
+
+
+def test_link_title_endpoint_requires_authentication():
+    app = create_app(Settings(_env_file=None, app_env="test"))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api_v1/link-preview/title",
+            json={"url": "https://example.com/item"},
+        )
+
+    assert response.status_code == 401

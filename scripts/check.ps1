@@ -9,11 +9,16 @@ $ruffTargets = @(
     "db/postgres.py",
     "db/redis.py",
     "db/repository.py",
+    "db/link_preview_repository.py",
+    "db/schemas/link_preview.py",
+    "dependecies/link_preview.py",
     "bot/sender.py",
+    "manager/link_preview.py",
     "manager/moysklad.py",
     "manager/bitrix.py",
     "manager/privoz_order.py",
     "manager/users.py",
+    "routes/link_preview.py",
     "moysklad_webhooks_creator.py",
     "tests"
 )

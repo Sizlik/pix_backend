@@ -12,6 +12,7 @@ from errors import IntegrationNotConfigured
 from routes.bitrix import router as router_bitrix
 from routes.bot import router as router_bot
 from routes.chat import router as router_chat
+from routes.link_preview import router as router_link_preview
 from routes.notifications import router as router_notifications
 from routes.orders import router as router_orders
 from routes.organizations import router as router_organizations
@@ -48,6 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_router.include_router(router_bitrix)
     api_router.include_router(router_orders)
     api_router.include_router(router_chat)
+    api_router.include_router(router_link_preview)
     api_router.include_router(router_notifications)
     api_router.include_router(router_organizations)
 
