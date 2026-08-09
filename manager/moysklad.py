@@ -1,27 +1,10 @@
-import base64
-import os
-import uuid
 
-import requests
-from watchfiles import awatch
 
-from db.models.orders import Order, OrderItems
+from db.models.orders import OrderItems
 from db.models.users import User
-from db.repository import MoySkladRepository, AbstractRepository
+from db.repository import AbstractRepository, MoySkladRepository
 from db.schemas import moysklad
 from db.schemas.orders import OrderCreate
-
-
-def set_organization():
-    link = "https://api.moysklad.ru/api/remap/1.2/context/usersettings"
-    login = os.getenv("MOYSKLAD_LOGIN")
-    password = os.getenv("MOYSKLAD_PASWORD")
-    headers = {"Authorization": f'Basic {base64.b64encode(f"{login}:{password}".encode("UTF-8")).decode("utf-8")}'}
-    x = requests.get(link, headers=headers).json()
-    return x["defaultCompany"]
-
-
-organization = set_organization()
 
 
 class CounterpartyRepository(MoySkladRepository):
@@ -82,17 +65,27 @@ class OperationManager:
         self.__repo = repo
 
     async def get_operations(self, user):
-        data = await self.__repo.read_all(filter=f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id};type=paymentin;type=demand;type=customerorder")
+        data = await self.__repo.read_all(
+            filter=f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id};type=paymentin;type=demand;type=customerorder"
+        )
         result = {"rows": []}
         for i in data.get("rows") or []:
             try:
                 if i.get("meta", {}).get("type") == "customerorder":
-                    if i.get("state", {}).get("name").lower() not in ["заказ доставляется", "выдан частично", "склад польша", "склад беларусь", "отгружен", "отгружен частично"]:
+                    if i.get("state", {}).get("name").lower() not in [
+                        "заказ доставляется",
+                        "выдан частично",
+                        "склад польша",
+                        "склад беларусь",
+                        "отгружен",
+                        "отгружен частично",
+                    ]:
                         continue
                 result["rows"].append(i)
             except Exception as e:
                 print(e)
         return result
+
 
 class ProductFolderManager:
     def __init__(self, repo: AbstractRepository):
@@ -107,7 +100,9 @@ class ProductManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
 
-    async def create_products_from_orders(self, order_items: list[OrderItems], product_folder_meta: dict, order_id: int, user: User):
+    async def create_products_from_orders(
+        self, order_items: list[OrderItems], product_folder_meta: dict, order_id: int, user: User
+    ):
         products = []
         for order_item in order_items:
             product = moysklad.ProductCreate(
@@ -156,49 +151,37 @@ class CustomerOrderManager:
         return await self.__repo.update(order_id, link=f"/positions/{position_id}", quantity=count)
 
     async def add_order_position(self, order_id, order_items):
-        return await self.__repo.create(link=f"{order_id}/positions", quantity=order_items[0]["count"], assortment={"meta": order_items[0]["moysklad_product_meta"]})
+        return await self.__repo.create(
+            link=f"{order_id}/positions",
+            quantity=order_items[0]["count"],
+            assortment={"meta": order_items[0]["moysklad_product_meta"]},
+        )
 
     async def create_order(self, order_items: list[OrderItems], user: User):
+        organization = await self.__repo.get_default_company()
         positions = []
         for order_item in order_items:
-            position = {
-                "quantity": order_item.count,
-                "assortment": {
-                    "meta": order_item.moysklad_product_meta
-                }
-            }
+            position = {"quantity": order_item.count, "assortment": {"meta": order_item.moysklad_product_meta}}
             positions.append(position)
 
         customer_order = {
-            "organization": {
-                "meta": organization.get("meta")
-            },
-            "agent": {
-                "meta": user.moysklad_counterparty_meta
-            },
-            "positions": positions
+            "organization": {"meta": organization.get("meta")},
+            "agent": {"meta": user.moysklad_counterparty_meta},
+            "positions": positions,
         }
         return await self.__repo.create(**customer_order)
 
     async def create_order_by_request(self, order_items, user: User):
+        organization = await self.__repo.get_default_company()
         positions = []
         for order_item in order_items:
-            position = {
-                "quantity": order_item["count"],
-                "assortment": {
-                    "meta": order_item["moysklad_product_meta"]
-                }
-            }
+            position = {"quantity": order_item["count"], "assortment": {"meta": order_item["moysklad_product_meta"]}}
             positions.append(position)
 
         customer_order = {
-            "organization": {
-                "meta": organization.get("meta")
-            },
-            "agent": {
-                "meta": user.moysklad_counterparty_meta
-            },
-            "positions": positions
+            "organization": {"meta": organization.get("meta")},
+            "agent": {"meta": user.moysklad_counterparty_meta},
+            "positions": positions,
         }
         return await self.__repo.create(**customer_order)
 
@@ -226,7 +209,9 @@ class InvoiceOutManager:
         return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")
 
     async def get_user_invoices(self, user: User):
-        return await self.__repo.read_all(f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}")
+        return await self.__repo.read_all(
+            f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}"
+        )
 
     async def get_invoice_by_id(self, id):
         return await self.__repo.read_one(id)
@@ -240,18 +225,18 @@ class PaymentInManager:
         self.__repo = repo
 
     async def create_payment_in(self, user: User, sum):
-        payment_in_data = {
-            "organization": organization,
-            "agent": {"meta": user.moysklad_counterparty_meta},
-            "sum": sum
-        }
+        organization = await self.__repo.get_default_company()
+        payment_in_data = {"organization": organization, "agent": {"meta": user.moysklad_counterparty_meta}, "sum": sum}
         return await self.__repo.create(**payment_in_data)
 
     async def link_payment_in(self, id, order_meta):
         return await self.__repo.update(id, operations=[{"meta": order_meta}])
 
     async def get_all_user_payment_ins(self, user: User):
-        return await self.__repo.read_all(filter=f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}&order=created,desc&expand=operations&limit=100")
+        return await self.__repo.read_all(
+            filter=f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}&order=created,desc&expand=operations&limit=100"
+        )
+
 
 # class StateManager:
 #     def __init__(self, repo: AbstractRepository):

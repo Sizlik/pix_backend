@@ -1,5 +1,3 @@
-import base64
-import os
 import random
 import uuid
 from typing import Optional
@@ -10,17 +8,26 @@ from fastapi_users import BaseUserManager, UUIDIDMixin, models
 from starlette.requests import Request
 
 from bot.sender import telegram_sender
-from db.models.users import get_user_db, User, UserDatabase
+from config import Settings, get_settings, require_secret
+from db.models.users import User, UserDatabase, get_user_db
 from db.redis import redis
-from db.schemas.users import UserUpdate
 from db.schemas import moysklad as schemas_moysklad
+from db.schemas.users import UserUpdate
 from dependecies import moysklad
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     user_db: UserDatabase
-    verification_token_secret = os.getenv("VERIFICATION_TOKEN_SECRET")
-    reset_password_token_secret = os.getenv("RESET_PASSWORD_TOKEN_SECRET")
+
+    def __init__(
+        self,
+        user_db: UserDatabase,
+        settings: Settings | None = None,
+    ):
+        super().__init__(user_db)
+        settings = settings or get_settings()
+        self.verification_token_secret = settings.verification_token_secret.get_secret_value()
+        self.reset_password_token_secret = settings.reset_password_token_secret.get_secret_value()
 
     async def verify(self, token: str, request: Optional[Request] = None) -> models.UP:
         data = await request.json()
@@ -29,19 +36,17 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         token = await redis.get(redis_key)
         return await super().verify(token, request)
 
-    async def on_after_request_verify(
-        self, user: models.UP, token: str, request: Optional[Request] = None
-    ) -> None:
+    async def on_after_request_verify(self, user: models.UP, token: str, request: Optional[Request] = None) -> None:
         verification_code = generate_code()
         redis_key = f"verify:{user.email}:{verification_code}"
         await redis.set(redis_key, token, ex=300)  # TTL 5 минут
         send_verification_code(user.email, verification_code)
 
-    async def on_after_verify(
-        self, user: User, request: Optional[Request] = None
-    ) -> None:
+    async def on_after_verify(self, user: User, request: Optional[Request] = None) -> None:
         if user.moysklad_counterparty_id:
-            await telegram_sender.send_group_message(f'<a href="{user.moysklad_counterparty_meta.get("uuidHref")}">Пользователь подтвердил почту!</a>\n{user.first_name} Клиент #{user.name_id}')
+            await telegram_sender.send_group_message(
+                f'<a href="{user.moysklad_counterparty_meta.get("uuidHref")}">Пользователь подтвердил почту!</a>\n{user.first_name} Клиент #{user.name_id}'
+            )
             return
 
         counterparty_manager = await moysklad.get_counterparty_manager()
@@ -49,34 +54,28 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             name=f"{user.first_name} Клиент #{user.name_id}",
             description=f"Информация с сайта pixlogistics:\nid = {user.id}",
             email=user.email,
-            phone=user.phone_number
+            phone=user.phone_number,
         )
         moysklad_counterparty = await counterparty_manager.create_user_counterparty(counterparty_data)
         user_update_data = UserUpdate(
             moysklad_counterparty_id=moysklad_counterparty.get("id"),
-            moysklad_counterparty_meta=moysklad_counterparty.get("meta")
+            moysklad_counterparty_meta=moysklad_counterparty.get("meta"),
         )
         await telegram_sender.send_group_message(
-            f'<a href="{moysklad_counterparty.get("meta").get("uuidHref")}">Новый пользователь на сайте!</a>\n{user.first_name} Клиент #{user.name_id}')
+            f'<a href="{moysklad_counterparty.get("meta").get("uuidHref")}">Новый пользователь на сайте!</a>\n{user.first_name} Клиент #{user.name_id}'
+        )
         await self.update(user_update_data, user, request=request)
 
-
-    async def on_after_register(
-        self, user: models.UP, request: Optional[Request] = None
-    ) -> None:
+    async def on_after_register(self, user: models.UP, request: Optional[Request] = None) -> None:
         await self.request_verify(user, request)
 
-    async def on_after_forgot_password(
-        self, user: models.UP, token: str, request: Optional[Request] = None
-    ) -> None:
+    async def on_after_forgot_password(self, user: models.UP, token: str, request: Optional[Request] = None) -> None:
         verification_code = generate_code()
         redis_key = f"reset:{user.email}:{verification_code}"
         await redis.set(redis_key, token, ex=300)  # TTL 5 минут
         send_verification_code(user.email, verification_code)
 
-    async def reset_password(
-        self, token: str, password: str, request: Optional[Request] = None
-    ) -> models.UP:
+    async def reset_password(self, token: str, password: str, request: Optional[Request] = None) -> models.UP:
         data = await request.json()
         email = data.get("email")
         redis_key = f"reset:{email}:{token}"
@@ -85,25 +84,32 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
 
 async def get_user_manager(user_db=Depends(get_user_db)):
-    yield UserManager(user_db)
+    yield UserManager(user_db, get_settings())
 
 
 def generate_code(length=6) -> str:
-    return ''.join(random.choices("0123456789", k=length))
+    return "".join(random.choices("0123456789", k=length))
 
 
-def send_verification_code(email: str, code: str):
-    url = 'https://api.smtp.bz/v1/smtp/send'
+def send_verification_code(
+    email: str,
+    code: str,
+    settings: Settings | None = None,
+):
+    url = "https://api.smtp.bz/v1/smtp/send"
     headers = {
-        'Authorization': os.getenv('MAILERSEND_TOKEN')
+        "Authorization": require_secret(
+            (settings or get_settings()).mailersend_token,
+            "email",
+        )
     }
 
     data = {
-        'name': 'PixLogistic',
-        'from': 'info@pixlogistic.com',
-        'subject': 'PixLogistic Код подтверждения',
-        'to': email,
-        'html': f'''<html>
+        "name": "PixLogistic",
+        "from": "info@pixlogistic.com",
+        "subject": "PixLogistic Код подтверждения",
+        "to": email,
+        "html": f"""<html>
                 <head></head>
                 <body>
                     <h2>Ваш код подтверждения</h2>
@@ -112,7 +118,7 @@ def send_verification_code(email: str, code: str):
                     <p>Код действителен в течение 5 минут. Если вы не запрашивали код, просто проигнорируйте это письмо.</p>
                     <div style="margin-top: 20px; color: #999;">© 2025 PixLogistic. Все права защищены.</div>
                 </body>
-            </html>'''
+            </html>""",
     }
     response = requests.post(url, headers=headers, data=data)
     print(response.text)

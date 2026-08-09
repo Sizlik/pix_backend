@@ -1,17 +1,15 @@
-import os
-
 import redis.asyncio
 from fastapi_cache.backends.redis import RedisBackend
 from fastapi_users.authentication import RedisStrategy
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-TOKEN_LIFETIME = os.getenv("TOKEN_LIFETIME", 3600)
+from config import get_settings
 
-redis = redis.asyncio.from_url(REDIS_URL, decode_responses=True)
+settings = get_settings()
+redis = redis.asyncio.from_url(settings.redis_url, decode_responses=True)
 
 
 def get_redis_strategy() -> RedisStrategy:
-    return RedisStrategy(redis, lifetime_seconds=TOKEN_LIFETIME)
+    return RedisStrategy(redis, lifetime_seconds=settings.token_lifetime)
 
 
 def get_redis_backend() -> RedisBackend:

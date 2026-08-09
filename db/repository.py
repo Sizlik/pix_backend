@@ -1,14 +1,13 @@
 import base64
-import os
 from abc import ABC, abstractmethod
 from uuid import UUID
 
 import requests
-from sqlalchemy import select, insert, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 
-from db.models.users import User
-from db.postgres import get_async_session, async_session_maker
+from config import Settings, get_settings, require_secret, require_value
+from db.postgres import async_session_maker
 
 
 class AbstractRepository(ABC):
@@ -51,41 +50,63 @@ class AbstractRepository(ABC):
 
 class MoySkladRepository(AbstractRepository):
     model = None
+    base_url = "https://api.moysklad.ru/api/remap/1.2/"
 
-    __link = "https://api.moysklad.ru/api/remap/1.2/"
-    __login = os.getenv("MOYSKLAD_LOGIN")
-    __password = os.getenv("MOYSKLAD_PASWORD")
-    __headers = {
-        "Authorization": f'Basic {base64.b64encode(f"{__login}:{__password}".encode("UTF-8")).decode("utf-8")}'
-    }
+    def __init__(self, settings: Settings | None = None):
+        self.settings = settings or get_settings()
+
+    def _headers(self) -> dict[str, str]:
+        login = require_value(self.settings.moysklad_login, "moysklad")
+        password = require_secret(self.settings.moysklad_password, "moysklad")
+        encoded = base64.b64encode(f"{login}:{password}".encode("utf-8")).decode("utf-8")
+        return {"Authorization": f"Basic {encoded}"}
+
+    async def get_default_company(self) -> dict:
+        response = requests.get(
+            f"{self.base_url}context/usersettings",
+            headers=self._headers(),
+        ).json()
+        return response["defaultCompany"]
 
     async def read_one(self, id, **kwargs):
-        return requests.get(self.__link + self.model + "/" + str(id) + "?" + kwargs.get("link", ""), headers=self.__headers).json()
+        return requests.get(
+            self.base_url + self.model + "/" + str(id) + "?" + kwargs.get("link", ""), headers=self._headers()
+        ).json()
 
     async def create(self, **kwargs):
         print(kwargs)
-        return requests.post(self.__link + self.model + "/" + kwargs.get("link", ""), headers=self.__headers, json=kwargs).json()
+        return requests.post(
+            self.base_url + self.model + "/" + kwargs.get("link", ""), headers=self._headers(), json=kwargs
+        ).json()
 
     async def create_multiply(self, rows: list):
-        return requests.post(self.__link + self.model, headers=self.__headers, json=rows).json()
+        return requests.post(self.base_url + self.model, headers=self._headers(), json=rows).json()
 
     async def read_all(self, filter="", order_by=None, **kwargs):
-        return requests.get(self.__link + self.model + kwargs.get("metadata", "") + "?filter=" + filter, headers=self.__headers).json()
+        return requests.get(
+            self.base_url + self.model + kwargs.get("metadata", "") + "?filter=" + filter, headers=self._headers()
+        ).json()
 
     async def update(self, id, **kwargs):
-        return requests.put(self.__link + self.model + f"/{id}" + kwargs.get("link", ""), headers=self.__headers, json=kwargs).json()
+        return requests.put(
+            self.base_url + self.model + f"/{id}" + kwargs.get("link", ""), headers=self._headers(), json=kwargs
+        ).json()
 
     async def search_one(self, search):
         pass
 
     async def delete(self, id, **kwargs):
-        return requests.delete(self.__link + self.model + f"/{id}" + kwargs.get("link", ""), headers=self.__headers).status_code
+        return requests.delete(
+            self.base_url + self.model + f"/{id}" + kwargs.get("link", ""), headers=self._headers()
+        ).status_code
 
     async def upsert(self, **kwargs):
         pass
 
     async def export(self, **kwargs):
-        return requests.post(self.__link + self.model + "/" + kwargs.get("link", ""), headers=self.__headers, json=kwargs).content
+        return requests.post(
+            self.base_url + self.model + "/" + kwargs.get("link", ""), headers=self._headers(), json=kwargs
+        ).content
 
 
 class SQLAlchemyRepository(AbstractRepository):
@@ -140,8 +161,7 @@ class SQLAlchemyRepository(AbstractRepository):
         async with async_session_maker() as session:
             stmt = sqlite_upsert(self.model).values(array_data)
             stmt = stmt.on_conflict_do_update(
-                index_elements=self.model.__table__.primary_key,
-                set_=dict(state=stmt.excluded.state)
+                index_elements=self.model.__table__.primary_key, set_=dict(state=stmt.excluded.state)
             ).returning(self.model)
             res = await session.execute(stmt)
             await session.commit()
