@@ -2,7 +2,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import quote_plus
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from errors import IntegrationNotConfigured
@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     privoz_password: SecretStr | None = None
     mailersend_token: SecretStr | None = None
 
+    @field_validator("chat_id", "help_chat_id", mode="before")
+    @classmethod
+    def blank_optional_ids_are_none(cls, value):
+        return None if value == "" else value
+
     @property
     def database_url(self) -> str:
         password = quote_plus(self.postgres_password.get_secret_value())
@@ -64,10 +69,7 @@ class Settings(BaseSettings):
             return self
         if self.postgres_password.get_secret_value() == LOCAL_POSTGRES_PASSWORD:
             raise ValueError("POSTGRES_PASSWORD must be set in production")
-        if (
-            self.verification_token_secret.get_secret_value()
-            == LOCAL_VERIFICATION_SECRET
-        ):
+        if self.verification_token_secret.get_secret_value() == LOCAL_VERIFICATION_SECRET:
             raise ValueError("VERIFICATION_TOKEN_SECRET must be set in production")
         if self.reset_password_token_secret.get_secret_value() == LOCAL_RESET_SECRET:
             raise ValueError("RESET_PASSWORD_TOKEN_SECRET must be set in production")

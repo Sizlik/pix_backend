@@ -38,3 +38,14 @@ def test_missing_integration_value_is_sanitized():
         match="moysklad is not configured",
     ):
         require_value(None, "moysklad")
+
+
+def test_blank_optional_chat_ids_are_treated_as_missing():
+    settings = Settings(
+        _env_file=None,
+        chat_id="",
+        help_chat_id="",
+    )
+
+    assert settings.chat_id is None
+    assert settings.help_chat_id is None
