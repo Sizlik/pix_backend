@@ -9,6 +9,8 @@ from db.schemas.orders import (
     NewOrderPositionChange,
     OrderChangesRequest,
     OrderChangesResponse,
+    OrderCreate,
+    OrderItemCreate,
 )
 from errors import (
     InvalidOrderChanges,
@@ -334,3 +336,68 @@ async def test_moysklad_failure_skips_telegram_and_telegram_failure_returns_warn
     ).save_changes(make_user(), orders.order["id"], request)
     assert result.changed is True
     assert result.notification_sent is False
+
+
+@pytest.mark.asyncio
+async def test_legacy_quantity_change_uses_fresh_order_and_shared_save_path():
+    orders = StubCustomerOrders()
+    notifier = StubNotifier()
+    manager = OrderChangesManager(orders, StubProducts(), notifier)
+
+    result = await manager.change_quantity(
+        make_user(), orders.order["id"], POSITION_1, 4
+    )
+
+    assert result.changed is True
+    assert len(orders.replacements) == 1
+    assert orders.replacements[0][1][0]["quantity"] == 4
+    assert len(notifier.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_delete_rejects_last_position_and_noneditable_status():
+    one_position_order = {
+        **order_payload(),
+        "positions": {"rows": current_rows()[:1]},
+    }
+    manager = OrderChangesManager(
+        StubCustomerOrders(one_position_order), StubProducts(), StubNotifier()
+    )
+    with pytest.raises(InvalidOrderChanges, match="at least one position"):
+        await manager.remove_position(
+            make_user(), one_position_order["id"], POSITION_1
+        )
+
+    locked = order_payload(status="Принят к исполнению")
+    locked_manager = OrderChangesManager(
+        StubCustomerOrders(locked), StubProducts(), StubNotifier()
+    )
+    with pytest.raises(OrderNotEditable):
+        await locked_manager.change_quantity(
+            make_user(), locked["id"], POSITION_1, 2
+        )
+
+
+@pytest.mark.asyncio
+async def test_legacy_add_positions_creates_every_requested_position_and_notifies_once():
+    orders = StubCustomerOrders()
+    products = StubProducts()
+    notifier = StubNotifier()
+    manager = OrderChangesManager(orders, products, notifier)
+    additions = OrderCreate(
+        order_items=[
+            OrderItemCreate(link="https://shop.example/one", count=1, comment=""),
+            OrderItemCreate(
+                link="https://shop.example/two", count=2, comment="blue"
+            ),
+        ]
+    )
+
+    result = await manager.add_positions(
+        make_user(), orders.order["id"], additions
+    )
+
+    assert result.changed is True
+    assert len(products.orders[0].order_items) == 2
+    assert len(orders.replacements[0][1]) == 4
+    assert len(notifier.messages) == 1

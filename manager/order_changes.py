@@ -161,6 +161,13 @@ def format_order_change_message(
     )
 
 
+def _existing_request_rows(order: dict) -> list[ExistingOrderPositionChange]:
+    return [
+        ExistingOrderPositionChange(id=row["id"], count=int(row["quantity"]))
+        for row in order["positions"]["rows"]
+    ]
+
+
 class OrderChangesManager:
     def __init__(
         self,
@@ -192,6 +199,15 @@ class OrderChangesManager:
         order = await self._customer_orders.get_order_by_id(order_id)
         if not order or not order.get("id"):
             raise OrderNotAccessible()
+        return await self._save_loaded_order(user, order_id, order, request)
+
+    async def _save_loaded_order(
+        self,
+        user: User,
+        order_id,
+        order: dict,
+        request: OrderChangesRequest,
+    ) -> OrderChangesResponse:
         self._validate_context(order, user, request.expected_updated)
         plan = build_order_change_plan(order["positions"]["rows"], request.positions)
         if not plan.summary.changed:
@@ -233,3 +249,77 @@ class OrderChangesManager:
             changed=True,
             notification_sent=notification_sent,
         )
+
+    async def _load_for_legacy_change(self, user: User, order_id) -> dict:
+        order = await self._customer_orders.get_order_by_id(order_id)
+        if not order or not order.get("id"):
+            raise OrderNotAccessible()
+        self._validate_context(order, user, order["updated"])
+        return order
+
+    async def change_quantity(
+        self,
+        user: User,
+        order_id,
+        position_id,
+        count: int,
+    ) -> OrderChangesResponse:
+        order = await self._load_for_legacy_change(user, order_id)
+        requested = []
+        found = False
+        for item in _existing_request_rows(order):
+            if str(item.id) == str(position_id):
+                requested.append(
+                    ExistingOrderPositionChange(id=item.id, count=count)
+                )
+                found = True
+            else:
+                requested.append(item)
+        if not found:
+            raise InvalidOrderChanges("unknown position id")
+        request = OrderChangesRequest(
+            expected_updated=order["updated"], positions=requested
+        )
+        return await self._save_loaded_order(user, order_id, order, request)
+
+    async def remove_position(
+        self,
+        user: User,
+        order_id,
+        position_id,
+    ) -> OrderChangesResponse:
+        order = await self._load_for_legacy_change(user, order_id)
+        requested = [
+            item
+            for item in _existing_request_rows(order)
+            if str(item.id) != str(position_id)
+        ]
+        if len(requested) == len(order["positions"]["rows"]):
+            raise InvalidOrderChanges("unknown position id")
+        if not requested:
+            raise InvalidOrderChanges("order must contain at least one position")
+        request = OrderChangesRequest(
+            expected_updated=order["updated"], positions=requested
+        )
+        return await self._save_loaded_order(user, order_id, order, request)
+
+    async def add_positions(
+        self,
+        user: User,
+        order_id,
+        additions: OrderCreate,
+    ) -> OrderChangesResponse:
+        order = await self._load_for_legacy_change(user, order_id)
+        requested: list[OrderPositionChange] = _existing_request_rows(order)
+        requested.extend(
+            NewOrderPositionChange(
+                link=item.link,
+                count=item.count,
+                comment=item.comment,
+            )
+            for item in additions.order_items
+        )
+        request = OrderChangesRequest(
+            expected_updated=order["updated"], positions=requested
+        )
+        return await self._save_loaded_order(user, order_id, order, request)

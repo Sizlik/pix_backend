@@ -185,41 +185,65 @@ async def get_user_order(
 
 @router.delete("/{order_id}/positions/{position_id}")
 async def delete_order_position(
-        order_id: str, position_id: str,
-        user: User = Depends(current_user_dependency),
-        customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
+    order_id: uuid.UUID,
+    position_id: uuid.UUID,
+    user: User = Depends(current_user_dependency),
+    manager: OrderChangesManager = Depends(
+        dependency_orders.get_order_changes_manager
+    ),
 ):
-    return await customer_order_manager.delete_order_position_by_id(order_id, position_id)
+    try:
+        return (await manager.remove_position(user, order_id, position_id)).order
+    except (
+        OrderNotAccessible,
+        OrderNotEditable,
+        OrderVersionConflict,
+        InvalidOrderChanges,
+    ) as exc:
+        raise order_change_http_error(exc) from None
 
 
 @router.put("/{order_id}/positions/{position_id}")
 async def update_order_position_count(
-        order_id: str, position_id: str, count: int = Body(...),
-        user: User = Depends(current_user_dependency),
-        customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
+    order_id: uuid.UUID,
+    position_id: uuid.UUID,
+    count: int = Body(..., gt=0),
+    user: User = Depends(current_user_dependency),
+    manager: OrderChangesManager = Depends(
+        dependency_orders.get_order_changes_manager
+    ),
 ):
-    return await customer_order_manager.update_order_position(order_id, position_id, count)
+    try:
+        return (
+            await manager.change_quantity(user, order_id, position_id, count)
+        ).order
+    except (
+        OrderNotAccessible,
+        OrderNotEditable,
+        OrderVersionConflict,
+        InvalidOrderChanges,
+    ) as exc:
+        raise order_change_http_error(exc) from None
 
 
 @router.put("/{order_id}/positions")
-async def add_order_positions_legacy(
-        order_id: str,
-        order: OrderCreate,
-        user: User = Depends(current_user_dependency),
-        customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),
-        product_manager: ProductManager = Depends(dependency_moysklad.get_product_manager),
+async def add_order_positions(
+    order_id: uuid.UUID,
+    order: OrderCreate,
+    user: User = Depends(current_user_dependency),
+    manager: OrderChangesManager = Depends(
+        dependency_orders.get_order_changes_manager
+    ),
 ):
-    products = await product_manager.create_products(order, user)
-    order_items = []
-    for product, order_item in zip(products, order.order_items):
-        order_items.append({
-            "count": order_item.count,
-            "moysklad_product_meta": product.get("meta")
-        })
-
-    customer_order = await customer_order_manager.add_order_position(order_id, order_items)
-    await telegram_sender.send_group_message(f'<a href="https://online.moysklad.ru/app/#customerorder/edit?id={order_id}">В заказ добавлена позиция</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
-    return customer_order
+    try:
+        return (await manager.add_positions(user, order_id, order)).order
+    except (
+        OrderNotAccessible,
+        OrderNotEditable,
+        OrderVersionConflict,
+        InvalidOrderChanges,
+    ) as exc:
+        raise order_change_http_error(exc) from None
 
 
 @router.delete("/{order_id}")

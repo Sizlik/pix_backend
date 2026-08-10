@@ -30,6 +30,26 @@ class StubOrderChangesManager:
             raise self.error
         return self.result
 
+    async def change_quantity(self, user, order_id, position_id, count):
+        self.calls.append(
+            ("quantity", user, str(order_id), str(position_id), count)
+        )
+        if self.error:
+            raise self.error
+        return self.result
+
+    async def remove_position(self, user, order_id, position_id):
+        self.calls.append(("remove", user, str(order_id), str(position_id)))
+        if self.error:
+            raise self.error
+        return self.result
+
+    async def add_positions(self, user, order_id, order):
+        self.calls.append(("add", user, str(order_id), order))
+        if self.error:
+            raise self.error
+        return self.result
+
 
 def order_changes_client(manager):
     app = create_app(Settings(_env_file=None, app_env="test"))
@@ -96,3 +116,60 @@ def test_batch_endpoint_requires_authentication():
             f"/api_v1/orders/{ORDER_ID}/changes", json=valid_payload()
         )
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "json_body", "operation"),
+    [
+        (
+            "put",
+            f"/api_v1/orders/{ORDER_ID}/positions/{POSITION_ID}",
+            3,
+            "quantity",
+        ),
+        (
+            "delete",
+            f"/api_v1/orders/{ORDER_ID}/positions/{POSITION_ID}",
+            None,
+            "remove",
+        ),
+        (
+            "put",
+            f"/api_v1/orders/{ORDER_ID}/positions",
+            {
+                "order_items": [
+                    {
+                        "link": "https://shop.example/new",
+                        "count": 1,
+                        "comment": "",
+                    }
+                ]
+            },
+            "add",
+        ),
+    ],
+)
+def test_legacy_mutation_routes_use_order_changes_manager(
+    method, path, json_body, operation
+):
+    manager = StubOrderChangesManager()
+    client, _ = order_changes_client(manager)
+    with client:
+        response = client.request(method.upper(), path, json=json_body)
+    assert response.status_code == 200
+    assert response.json()["state"]["name"] == "Изменен клиентом"
+    assert manager.calls[0][0] == operation
+
+
+def test_legacy_mutation_route_maps_locked_status_to_conflict():
+    manager = StubOrderChangesManager(
+        error=OrderNotEditable("Принят к исполнению")
+    )
+    client, _ = order_changes_client(manager)
+    with client:
+        response = client.put(
+            f"/api_v1/orders/{ORDER_ID}/positions/{POSITION_ID}",
+            json=2,
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_not_editable"
