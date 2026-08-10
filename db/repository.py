@@ -78,6 +78,8 @@ class MoySkladRepository(AbstractRepository):
             + kwargs.get("link", ""),
             headers=self._headers(),
         )
+        if response.status_code == 404:
+            return {}
         response.raise_for_status()
         return response.json()
 

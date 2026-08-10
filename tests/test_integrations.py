@@ -117,3 +117,32 @@ async def test_moysklad_update_omits_transport_link_and_raises_http_errors(
     )
     with pytest.raises(requests.HTTPError):
         await repository.update("order", positions=[], state={"meta": {}})
+
+
+@pytest.mark.asyncio
+async def test_moysklad_read_one_maps_only_not_found_to_an_empty_result(
+    monkeypatch,
+):
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        moysklad_login="login",
+        moysklad_password="password",
+    )
+    repository = MoySkladRepository(settings)
+    repository.model = "entity/customerorder"
+
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda *args, **kwargs: FakeMoySkladResponse(status_code=404),
+    )
+    assert await repository.read_one("missing") == {}
+
+    monkeypatch.setattr(
+        requests,
+        "get",
+        lambda *args, **kwargs: FakeMoySkladResponse(status_code=503),
+    )
+    with pytest.raises(requests.HTTPError):
+        await repository.read_one("unavailable")
