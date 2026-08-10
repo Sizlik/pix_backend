@@ -7,7 +7,12 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, Response
 
 from bot.sender import telegram_sender
 from db.models.users import User
-from db.schemas.orders import OrderChangesRequest, OrderChangesResponse, OrderCreate
+from db.schemas.orders import (
+    CheckoutOrderCreate,
+    OrderChangesRequest,
+    OrderChangesResponse,
+    OrderCreate,
+)
 from dependecies import (
     moysklad as dependency_moysklad,
 )
@@ -26,10 +31,10 @@ from errors import (
 from manager.moysklad import (
     CustomerOrderManager,
     InvoiceOutManager,
-    ProductManager,
     PurchaseOrderManager,
 )
 from manager.order_changes import OrderChangesManager
+from manager.order_creation import OrderCreationManager
 from manager.orders import OrderActionsManager
 from manager.privoz_order import PrivozManager
 from routes.users import current_user_dependency
@@ -61,23 +66,13 @@ def order_change_http_error(exc: Exception) -> HTTPException:
 
 @router.post("")
 async def create_order(
-    order: OrderCreate,
+    order: CheckoutOrderCreate,
     user: User = Depends(current_user_dependency),
-    customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),
-    product_manager: ProductManager = Depends(dependency_moysklad.get_product_manager),
+    manager: OrderCreationManager = Depends(
+        dependency_orders.get_order_creation_manager
+    ),
 ):
-    products = await product_manager.create_products(order, user)
-
-    order_items = []
-    for product, order_item in zip(products, order.order_items):
-        order_items.append({
-            "count": order_item.count,
-            "moysklad_product_meta": product.get("meta")
-        })
-
-    customer_orders = await customer_order_manager.create_order_by_request(order_items, user)
-    await telegram_sender.send_group_message(f'<a href="{customer_orders.get("meta").get("uuidHref")}">Новый заказ</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
-    return customer_orders
+    return await manager.create(order, user)
 
 
 @router.get("/export/{id}")

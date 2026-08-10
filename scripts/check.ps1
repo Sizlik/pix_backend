@@ -38,6 +38,7 @@ $ruffTargets = @(
     "manager/moysklad.py",
     "manager/moysklad_order_chat.py",
     "manager/order_changes.py",
+    "manager/order_creation.py",
     "manager/order_chat.py",
     "manager/order_chat_format.py",
     "manager/bitrix.py",

@@ -26,6 +26,10 @@ class OrderCreate(OrderBase):
     pass
 
 
+class CheckoutOrderCreate(OrderBase):
+    address_id: UUID
+
+
 class OrderRead(OrderBase):
     id: int
     bitrix_deal_id: int

@@ -5,6 +5,33 @@ from db.models.users import User
 from db.repository import AbstractRepository, MoySkladRepository
 from db.schemas import moysklad
 from db.schemas.orders import OrderCreate
+from manager.addresses import DeliveryAddressSnapshot
+
+
+def moysklad_delivery_payload(address: DeliveryAddressSnapshot) -> dict:
+    parts = []
+    if address.postal_code:
+        parts.append(address.postal_code)
+    parts.extend(["Россия", address.city, address.street, f"дом {address.house}"])
+    if address.building:
+        parts.append(address.building)
+    if address.apartment:
+        parts.append(f"кв./офис {address.apartment}")
+
+    full = {
+        "city": address.city,
+        "street": address.street,
+        "house": ", ".join(
+            value for value in (address.house, address.building) if value
+        ),
+    }
+    if address.postal_code:
+        full["postalCode"] = address.postal_code
+    if address.apartment:
+        full["apartment"] = address.apartment
+    if address.delivery_comment:
+        full["addInfo"] = address.delivery_comment
+    return {"shipmentAddress": ", ".join(parts), "shipmentAddressFull": full}
 
 
 class CounterpartyRepository(MoySkladRepository):
@@ -189,7 +216,12 @@ class CustomerOrderManager:
         }
         return await self.__repo.create(**customer_order)
 
-    async def create_order_by_request(self, order_items, user: User):
+    async def create_order_by_request(
+        self,
+        order_items,
+        user: User,
+        delivery_address: DeliveryAddressSnapshot,
+    ):
         organization = await self.__repo.get_default_company()
         positions = []
         for order_item in order_items:
@@ -200,6 +232,7 @@ class CustomerOrderManager:
             "organization": {"meta": organization.get("meta")},
             "agent": {"meta": user.moysklad_counterparty_meta},
             "positions": positions,
+            **moysklad_delivery_payload(delivery_address),
         }
         return await self.__repo.create(**customer_order)
 
