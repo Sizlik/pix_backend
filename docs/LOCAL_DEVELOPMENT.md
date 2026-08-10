@@ -108,15 +108,91 @@ Known warnings currently come from passlib packaging, SQLAlchemy `as_scalar()`, 
 
 ## MoySklad order-chat production rollout
 
-This is an operator runbook, not an automated setup sequence:
+This is an operator runbook, not an automated setup sequence. None of these
+commands belongs in ordinary local checks.
 
-1. Back up PostgreSQL and the `pix-minio-data` volume. Record tested restore commands, retention, storage location, and the responsible owner.
-2. Deploy code and containers with `ENABLE_MOYSKLAD_ORDER_CHAT=false`. Build the pinned MinIO source image and scan the resulting image before promotion.
-3. Inspect `alembic history`, the active database host/name without printing its password, and the SQL in migration `c8f2a4e6d901`. Obtain explicit approval before `alembic upgrade c8f2a4e6d901`.
-4. Start MinIO, verify its health, upload one disposable object, restart only MinIO, and confirm the object remains. Delete only that object; keep the named volume.
-5. Set production MinIO and webhook secrets, enable the feature, restart the backend, verify `/api_v1/health`, and make one authenticated order-history request.
-6. Run `python scripts/register_moysklad_order_chat_webhook.py --base-url https://pixlogistic.com` without `--apply`. This preview performs a live webhook-list request. Review only the redacted plan, obtain approval, then rerun with `--apply`.
-7. In a staging order, send site text, a photo, and a PDF; verify the standard MoySklad comment/files and Telegram group alert. Reply below the marker with text and a `[КЛИЕНТ]` file; verify site realtime/history and the client Telegram alert.
-8. Verify that a second client gets `404`, an internal manager file is hidden, a repeated webhook `requestId` does not duplicate history, and two open tabs both receive one reply.
+1. Copy only missing keys from `.env.production.example` into the existing
+   ignored server `.env`. Preserve every working value and keep
+   `ENABLE_MOYSKLAD_ORDER_CHAT=false`. Restrict the resulting file to the
+   deployment account.
+2. Validate the base configuration and Compose without printing `.env` or
+   starting containers:
 
-For incident rollback, first set `ENABLE_MOYSKLAD_ORDER_CHAT=false` and restart the backend. After separate approval, disable/delete only the exact registered order-chat webhook. Keep the PostgreSQL tables and MinIO volume intact and continue the existing general-support chat. Do not downgrade the append-only migration during incident rollback.
+   ```bash
+   docker build -t backend .
+   docker run --rm --env-file .env backend python scripts/check_production_config.py
+   docker-compose --env-file .env config --quiet
+   ```
+
+3. Resolve the exact production PostgreSQL container and Compose volume names.
+   Record the restore owner, retention and storage location. Back up PostgreSQL
+   before the schema change. Back up the resolved `pix-minio-data` volume in the
+   same retention set if it already contains data. Never use `down --volumes`.
+4. Deploy code with the feature disabled. Build the pinned MinIO source image,
+   scan it, start MinIO and inspect health:
+
+   ```bash
+   docker-compose --env-file .env build minio
+   docker-compose --env-file .env up -d minio
+   docker-compose --env-file .env ps minio
+   ```
+
+   If the prebuilt frontend image is refreshed for this release, supply its
+   public API origin during the image build (runtime `env_file` is too late):
+
+   ```bash
+   docker build --build-arg NEXT_PUBLIC_BACKEND_URL=https://pixlogistic.com/api_v1 -t frontend_v2:latest ../pix_frontend_v2
+   ```
+
+   Upload one uniquely named disposable object through an approved S3 client,
+   restart only MinIO, verify the same bytes, then delete only that object. Keep
+   the named volume.
+5. Inspect the active database host/name without displaying its password and
+   review both migration history and
+   `alembic/versions/c8f2a4e6d901_order_chat_delivery.py`:
+
+   ```bash
+   docker-compose run --rm backend alembic current
+   docker-compose run --rm backend alembic history
+   ```
+
+   After the PostgreSQL backup and separate migration approval, apply only:
+
+   ```bash
+   docker-compose run --rm backend alembic upgrade c8f2a4e6d901
+   ```
+
+6. Add the production MoySklad, Telegram, webhook and MinIO values to the
+   ignored `.env`, set `ENABLE_MOYSKLAD_ORDER_CHAT=true`, then require the full
+   order-chat configuration before restarting only the backend:
+
+   ```bash
+   docker run --rm --env-file .env backend python scripts/check_production_config.py --require-order-chat
+   docker-compose --env-file .env up -d --no-deps --force-recreate backend
+   curl -fsS https://pixlogistic.com/api_v1/health
+   ```
+
+7. Make one authenticated order-history request, then preview webhook
+   registration:
+
+   ```bash
+   docker-compose exec backend python scripts/register_moysklad_order_chat_webhook.py --base-url https://pixlogistic.com
+   ```
+
+   This preview is not offline: it performs a live MoySklad webhook-list
+   request. Review only its redacted target and obtain separate approval before
+   repeating the command with `--apply`.
+8. In a staging order, send site text, a photo and a PDF. Verify the standard
+   MoySklad comment/files and Telegram group alert. Reply below the marker with
+   text and a `[КЛИЕНТ]` file; verify site realtime/history and the client
+   Telegram alert.
+9. Verify that a second client gets `404`, an internal manager file is hidden,
+   a repeated webhook `requestId` does not duplicate history, immutable table
+   triggers reject update/delete, and two open tabs both receive one reply.
+
+For incident rollback, first restore
+`ENABLE_MOYSKLAD_ORDER_CHAT=false` in the ignored `.env` and recreate only the
+backend container. After separate approval, disable/delete only the exact
+registered order-chat webhook. Keep the PostgreSQL tables and MinIO volume
+intact and continue the existing general-support chat. Do not downgrade the
+append-only migration during incident rollback.

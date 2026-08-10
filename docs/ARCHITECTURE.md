@@ -114,7 +114,12 @@ When `ENABLE_SCHEDULER=true`, the FastAPI lifespan starts APScheduler with an ho
 
 The production Compose file describes PostgreSQL, source-built pinned MinIO, a prebuilt frontend image, backend image, pgAdmin, and bot. NGINX configuration proxies `/` to frontend, `/api_v1/` and WebSocket upgrades to backend, applies a `205m` cap only to order-chat uploads, disables access logging for the secret webhook path, and proxies `/pgadmin/` to pgAdmin. TLS files are mounted outside the repository.
 
-GitHub Actions deploys pushes to `main` over SSH, pulls on the server, builds the backend image, runs Alembic, restarts Compose, and prunes Docker data. This pipeline is deployment automation, not a local-development command; migration and prune behavior require production review.
+GitHub Actions deploys pushes to `main` over SSH, pulls on the server, builds
+the backend image, runs the sanitized base production preflight, validates
+Compose, builds pinned MinIO and updates services through `docker-compose up
+-d`. The automatic path does not run Alembic, stop the whole Compose project,
+prune Docker data or register webhooks. Those production mutations remain
+separate approved operator steps.
 
 ## Current technical debt
 

@@ -41,6 +41,13 @@ Do not test old credentials to determine whether they still work. Do not rewrite
 ## Dependency and deployment observations
 
 - The frontend dependency audit currently reports unresolved findings, including high and critical severities. Upgrade deliberately with compatibility tests; do not use a force fix blindly.
-- The deployment workflow runs a database migration and Docker prune on the server. Protect the deployment branch, CI secrets, database backups, and recovery process.
+- The deployment workflow validates configuration and updates Compose without
+  running migrations, stopping the whole project, pruning Docker data or
+  registering webhooks. Protect the deployment branch, CI secrets, database
+  backups and the separate manual migration approval process.
 - Production `.env` must be readable only by the deployment account and must not be copied into Docker build layers or CI output.
+- Backend and frontend Docker build contexts exclude ignored `.env` files,
+  local dependency/build caches, Git metadata and test artifacts. The frontend
+  public API origin is an explicit build argument and may never contain a
+  credential.
 - The MinIO server repository is archived and distributed under AGPLv3. The image is built from the pinned `RELEASE.2025-10-15T17-29-55Z` source tag instead of an unreviewed binary/latest tag. Legal/license review, image scanning, upstream-risk ownership, and a replacement plan are production prerequisites.
