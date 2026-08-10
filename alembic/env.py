@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from db.models import (
+    addresses as addresses,
+)
+from db.models import (
     chat as chat,
 )
 from db.models import (
