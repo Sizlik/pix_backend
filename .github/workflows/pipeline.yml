@@ -20,8 +20,8 @@ jobs:
             cd cicd/pix_backend
             git pull --rebase
             docker build -t backend .
-            alembic upgrade head
+            docker run --rm --env-file ../../pix_backend/.env backend python scripts/check_production_config.py
             cd ../../pix_backend
-            docker-compose down
-            docker-compose up -d
-            docker system prune --force
+            docker-compose --env-file .env config --quiet
+            docker-compose --env-file .env build minio
+            docker-compose --env-file .env up -d
