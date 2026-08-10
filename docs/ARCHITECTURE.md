@@ -35,7 +35,7 @@ flowchart LR
 
 1. `main.create_app()` creates the API router under `/api_v1`, middleware, error mapping, Redis cache backend, and optional scheduler.
 2. Route modules validate transport data and obtain the current user and managers through FastAPI dependencies.
-3. Managers implement order, payment, user, chat, notification, and organization use cases.
+3. Managers implement order, address, payment, user, chat, notification, and organization use cases. `OrderCreationManager` coordinates address validation, product and customer-order creation, last-use preference, and notification.
 4. Repositories talk to PostgreSQL or an external API. External credentials are resolved at call time through `config.Settings`.
 5. `IntegrationNotConfigured` is mapped to HTTP 503 with no credential details.
 
@@ -49,7 +49,8 @@ All paths below are relative to `/api_v1`.
 | --- | --- | --- | --- |
 | Health/compatibility | `/health`, `/`, `/hello/{name}` | Liveness and legacy sample routes | None |
 | Users/auth | `/users/auth/*`, `/users/users/*`, `/users/updatedMe`, `/users/operations`, `/users/telegram/{id}` | FastAPI Users JWT, verification/reset, profile and MoySklad balance | Redis token strategy, PostgreSQL, MoySklad, Telegram/email |
-| Orders | `/orders`, `/orders/{id}`, `/orders/{id}/changes`, `/orders/state/{id}`, `/orders/*/export/*`, `/orders/file` | Create/read/update/cancel orders, positions, exports, spreadsheet preview | MoySklad, Privoz, Telegram, pandas |
+| Orders | `/orders`, `/orders/{id}`, `/orders/{id}/changes`, `/orders/state/{id}`, `/orders/*/export/*`, `/orders/file` | Create/read/update/cancel orders, require delivery address at checkout, positions, exports, spreadsheet preview | PostgreSQL addresses, MoySklad, Privoz, Telegram, pandas |
+| Addresses | `/addresses` GET/POST, `/addresses/{id}` PATCH/DELETE | User-owned address-book CRUD, case-insensitive title search, pagination, and last-used default | PostgreSQL |
 | Payments | `/payment`, `/payment/vault_courses` | MoySklad payments and cached exchange rates | MoySklad, Redis, Frankfurter |
 | Organizations | `/organizations/*` | Owners, organization users, aggregate orders | PostgreSQL, MoySklad, Privoz |
 | Notifications | `/notifications/*` | Create, enrich, list, and mark notifications | PostgreSQL, MoySklad, chat |
@@ -64,6 +65,7 @@ All paths below are relative to `/api_v1`.
 | Store/model | Purpose |
 | --- | --- |
 | PostgreSQL `user` | FastAPI Users identity plus balance, organization, MoySklad, Bitrix, and Telegram references |
+| `address` | Unlimited user-owned delivery addresses, normalized unique titles, structured address fields, and `last_used_at` preference |
 | `organization` | Owner-linked organization boundary |
 | `order`, `order_items`, `order_actions` | Local order metadata, positions, and state history; most live order data is read from MoySklad |
 | `transaction` | User balance changes |
@@ -94,6 +96,10 @@ External calls currently use synchronous `requests` in async request paths. They
 ## REST, WebSocket, and scheduled flows
 
 The JWT login endpoint stores bearer-token state through the Redis strategy. Protected REST routes resolve `current_user_dependency`. Verification/reset handlers store short-lived code-to-token mappings in Redis before sending email.
+
+Checkout `POST /api_v1/orders` requires `address_id`. The backend resolves the address with both its ID and the authenticated user ID before any external request, creates an immutable address snapshot, and copies it into the MoySklad customer order as `shipmentAddress` and `shipmentAddressFull`. `shipmentAddressFull.comment` remains reserved for the existing Privoz `#` marker; the courier note is written to `addInfo`. The address becomes the default only when MoySklad order creation succeeds and `last_used_at` is updated. Address preference and Telegram notification failures do not turn an already-created external order into a retryable checkout failure.
+
+The frontend reuses one address-book component for checkout and `/dashboard/addresses`. It supports create, edit, delete, case-insensitive title search, explicit selection, server-derived default selection, and a guarded single-submit checkout flow that preserves the cart on failure.
 
 Customer edits are staged in the browser and saved through
 `PUT /api_v1/orders/{id}/changes`. The backend accepts edits only in
