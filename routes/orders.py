@@ -3,22 +3,60 @@ import uuid
 from typing import Annotated
 
 import pandas as pd
-import requests
-from fastapi import APIRouter, Depends, File, UploadFile, Form, Body, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Response
 
 from bot.sender import telegram_sender
 from db.models.users import User
-from db.schemas.moysklad import ProductFolderCreate
-from db.schemas.orders import OrderCreate
-from manager.orders import OrderManager, OrderItemsManager, OrderActionsManager
-from manager.moysklad import CustomerOrderManager, ProductManager, ProductFolderManager, PurchaseOrderManager, \
-    InvoiceOutManager
+from db.schemas.orders import OrderChangesRequest, OrderChangesResponse, OrderCreate
+from dependecies import (
+    moysklad as dependency_moysklad,
+)
+from dependecies import (
+    orders as dependency_orders,
+)
+from dependecies import (
+    privoz_orders as dependency_privoz,
+)
+from errors import (
+    InvalidOrderChanges,
+    OrderNotAccessible,
+    OrderNotEditable,
+    OrderVersionConflict,
+)
+from manager.moysklad import (
+    CustomerOrderManager,
+    InvoiceOutManager,
+    ProductManager,
+    PurchaseOrderManager,
+)
+from manager.order_changes import OrderChangesManager
+from manager.orders import OrderActionsManager
 from manager.privoz_order import PrivozManager
 from routes.users import current_user_dependency
-from dependecies import (orders as dependency_orders, bitrix as dependency_bitrix, moysklad as dependency_moysklad, privoz_orders as dependency_privoz)
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
+
+def order_change_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, OrderNotAccessible):
+        return HTTPException(
+            404,
+            detail={"code": "order_not_found", "message": "Order not found"},
+        )
+    if isinstance(exc, OrderNotEditable):
+        return HTTPException(
+            409,
+            detail={"code": "order_not_editable", "message": "Order is not editable"},
+        )
+    if isinstance(exc, OrderVersionConflict):
+        return HTTPException(
+            409,
+            detail={"code": "order_version_conflict", "message": "Order was updated"},
+        )
+    return HTTPException(
+        422,
+        detail={"code": "invalid_order_changes", "message": str(exc)},
+    )
 
 
 @router.post("")
@@ -110,6 +148,26 @@ async def get_user_order_actions(
     return await order_actions_manager.get_order_actions(order_id)
 
 
+@router.put("/{order_id}/changes", response_model=OrderChangesResponse)
+async def save_order_changes(
+    order_id: uuid.UUID,
+    request: OrderChangesRequest,
+    user: User = Depends(current_user_dependency),
+    manager: OrderChangesManager = Depends(
+        dependency_orders.get_order_changes_manager
+    ),
+):
+    try:
+        return await manager.save_changes(user, order_id, request)
+    except (
+        OrderNotAccessible,
+        OrderNotEditable,
+        OrderVersionConflict,
+        InvalidOrderChanges,
+    ) as exc:
+        raise order_change_http_error(exc) from None
+
+
 @router.get("/{order_id}")
 async def get_user_order(
     order_id: uuid.UUID,
@@ -135,7 +193,7 @@ async def delete_order_position(
 
 
 @router.put("/{order_id}/positions/{position_id}")
-async def update_order_position(
+async def update_order_position_count(
         order_id: str, position_id: str, count: int = Body(...),
         user: User = Depends(current_user_dependency),
         customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
@@ -144,7 +202,7 @@ async def update_order_position(
 
 
 @router.put("/{order_id}/positions")
-async def update_order_position(
+async def add_order_positions_legacy(
         order_id: str,
         order: OrderCreate,
         user: User = Depends(current_user_dependency),

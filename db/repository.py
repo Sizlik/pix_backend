@@ -69,28 +69,54 @@ class MoySkladRepository(AbstractRepository):
         return response["defaultCompany"]
 
     async def read_one(self, id, **kwargs):
-        return requests.get(
-            self.base_url + self.model + "/" + str(id) + "?" + kwargs.get("link", ""), headers=self._headers()
-        ).json()
+        response = requests.get(
+            self.base_url
+            + self.model
+            + "/"
+            + str(id)
+            + "?"
+            + kwargs.get("link", ""),
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def create(self, **kwargs):
-        print(kwargs)
         return requests.post(
             self.base_url + self.model + "/" + kwargs.get("link", ""), headers=self._headers(), json=kwargs
         ).json()
 
     async def create_multiply(self, rows: list):
-        return requests.post(self.base_url + self.model, headers=self._headers(), json=rows).json()
+        response = requests.post(
+            self.base_url + self.model,
+            headers=self._headers(),
+            json=rows,
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def read_all(self, filter="", order_by=None, **kwargs):
-        return requests.get(
-            self.base_url + self.model + kwargs.get("metadata", "") + "?filter=" + filter, headers=self._headers()
-        ).json()
+        response = requests.get(
+            self.base_url
+            + self.model
+            + kwargs.get("metadata", "")
+            + "?filter="
+            + filter,
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def update(self, id, **kwargs):
-        return requests.put(
-            self.base_url + self.model + f"/{id}" + kwargs.get("link", ""), headers=self._headers(), json=kwargs
-        ).json()
+        payload = dict(kwargs)
+        link = payload.pop("link", "")
+        response = requests.put(
+            self.base_url + self.model + f"/{id}" + link,
+            headers=self._headers(),
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def search_one(self, search):
         pass

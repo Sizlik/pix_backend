@@ -142,10 +142,28 @@ class CustomerOrderManager:
         return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")
 
     async def change_state(self, id, state_name):
+        state_meta = await self.get_state_meta(state_name)
+        return await self.__repo.update(id, state={"meta": state_meta})
+
+    async def get_state_meta(self, state_name: str) -> dict:
         metadata = await self.get_metadata()
-        for state in metadata.get("states"):
+        for state in metadata.get("states", []):
             if state.get("name") == state_name:
-                return await self.__repo.update(id, state={"meta": state.get("meta")})
+                return state["meta"]
+        raise RuntimeError("required MoySklad order state is missing")
+
+    async def replace_positions_and_state(
+        self,
+        order_id,
+        positions: list[dict],
+        state_meta: dict,
+    ):
+        await self.__repo.update(
+            order_id,
+            positions=positions,
+            state={"meta": state_meta},
+        )
+        return await self.get_order_by_id(order_id)
 
     async def update_order_position(self, order_id, position_id, count):
         return await self.__repo.update(order_id, link=f"/positions/{position_id}", quantity=count)

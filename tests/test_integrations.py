@@ -68,3 +68,52 @@ def test_email_requires_token_before_http(monkeypatch):
             "123456",
             missing_integration_settings(),
         )
+
+
+class FakeMoySkladResponse:
+    def __init__(self, payload=None, status_code=200):
+        self.payload = payload or {}
+        self.status_code = status_code
+
+    def json(self):
+        return self.payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"status {self.status_code}")
+
+
+@pytest.mark.asyncio
+async def test_moysklad_update_omits_transport_link_and_raises_http_errors(
+    monkeypatch,
+):
+    calls = []
+
+    def put(url, **kwargs):
+        calls.append((url, kwargs["json"]))
+        return FakeMoySkladResponse({"id": "order"})
+
+    settings = Settings(
+        _env_file=None,
+        app_env="test",
+        moysklad_login="login",
+        moysklad_password="password",
+    )
+    monkeypatch.setattr(requests, "put", put)
+    repository = MoySkladRepository(settings)
+    repository.model = "entity/customerorder"
+
+    await repository.update("order", link="/positions/position", quantity=2)
+
+    assert calls[0][0].endswith(
+        "/entity/customerorder/order/positions/position"
+    )
+    assert calls[0][1] == {"quantity": 2}
+
+    monkeypatch.setattr(
+        requests,
+        "put",
+        lambda *args, **kwargs: FakeMoySkladResponse(status_code=503),
+    )
+    with pytest.raises(requests.HTTPError):
+        await repository.update("order", positions=[], state={"meta": {}})

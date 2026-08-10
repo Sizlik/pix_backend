@@ -11,14 +11,18 @@ $ruffTargets = @(
     "db/repository.py",
     "db/link_preview_repository.py",
     "db/schemas/link_preview.py",
+    "db/schemas/orders.py",
     "dependecies/link_preview.py",
+    "dependecies/orders.py",
     "bot/sender.py",
     "manager/link_preview.py",
     "manager/moysklad.py",
+    "manager/order_changes.py",
     "manager/bitrix.py",
     "manager/privoz_order.py",
     "manager/users.py",
     "routes/link_preview.py",
+    "routes/orders.py",
     "moysklad_webhooks_creator.py",
     "tests"
 )
