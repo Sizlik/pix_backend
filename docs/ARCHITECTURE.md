@@ -48,7 +48,7 @@ All paths below are relative to `/api_v1`.
 | --- | --- | --- | --- |
 | Health/compatibility | `/health`, `/`, `/hello/{name}` | Liveness and legacy sample routes | None |
 | Users/auth | `/users/auth/*`, `/users/users/*`, `/users/updatedMe`, `/users/operations`, `/users/telegram/{id}` | FastAPI Users JWT, verification/reset, profile and MoySklad balance | Redis token strategy, PostgreSQL, MoySklad, Telegram/email |
-| Orders | `/orders`, `/orders/{id}`, `/orders/state/{id}`, `/orders/*/export/*`, `/orders/file` | Create/read/update/cancel orders, positions, exports, spreadsheet preview | MoySklad, Privoz, Telegram, pandas |
+| Orders | `/orders`, `/orders/{id}`, `/orders/{id}/changes`, `/orders/state/{id}`, `/orders/*/export/*`, `/orders/file` | Create/read/update/cancel orders, positions, exports, spreadsheet preview | MoySklad, Privoz, Telegram, pandas |
 | Payments | `/payment`, `/payment/vault_courses` | MoySklad payments and cached exchange rates | MoySklad, Redis, Frankfurter |
 | Organizations | `/organizations/*` | Owners, organization users, aggregate orders | PostgreSQL, MoySklad, Privoz |
 | Notifications | `/notifications/*` | Create, enrich, list, and mark notifications | PostgreSQL, MoySklad, chat |
@@ -89,6 +89,15 @@ External calls currently use synchronous `requests` in async request paths. They
 ## REST, WebSocket, and scheduled flows
 
 The JWT login endpoint stores bearer-token state through the Redis strategy. Protected REST routes resolve `current_user_dependency`. Verification/reset handlers store short-lived code-to-token mappings in Redis before sending email.
+
+Customer edits are staged in the browser and saved through
+`PUT /api_v1/orders/{id}/changes`. The backend accepts edits only in
+`Подтвержден менеджером`, `Ожидает подтверждения клиента`,
+`Подтвержден клиентом`, or `Изменен клиентом`, verifies the owner and
+`expected_updated`, then replaces positions and sets `Изменен клиентом` in one
+MoySklad order update. Telegram is attempted after the save; a notification
+failure is reported separately and does not invite the client to resubmit the
+order mutation.
 
 For WebSocket chat, the client opens `/api_v1/chat/ws` with `auth` and optional `room` query parameters. The backend validates the token through Redis, associates the socket with an in-memory room in `ChatManager`, persists messages, and can create notifications or Telegram alerts. This in-memory connection registry is process-local; multi-worker scaling needs a shared pub/sub layer.
 
