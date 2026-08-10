@@ -25,3 +25,11 @@ class OrderVersionConflict(RuntimeError):
 
 class InvalidOrderChanges(ValueError):
     pass
+
+
+class AddressNotFound(LookupError):
+    pass
+
+
+class AddressNameConflict(ValueError):
+    pass
