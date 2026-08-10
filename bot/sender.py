@@ -1,3 +1,5 @@
+import html
+
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -73,6 +75,32 @@ class Sender:
                 f"{chat_id}\nПользователь: {user.first_name} Клиент #{user.name_id}\nНаписал в поддержку:\n\n{text}"
             )
         await self._bot().send_message(self.help_chat_id, message, reply_markup=await self.chat_keyboard())
+
+    async def send_order_client_alert(
+        self,
+        *,
+        order_id: str,
+        order_name: str,
+        client_name: str,
+        client_number: int,
+        text: str,
+        filenames: list[str],
+    ) -> None:
+        attachment_line = "\nФайлы: " + ", ".join(filenames) if filenames else ""
+        safe_text = html.escape(text) if text else "(только файлы)"
+        message = (
+            f"Клиент #{client_number} {html.escape(client_name)} написал "
+            f'по заказу <a href="https://online.moysklad.ru/app/'
+            f'#customerorder/edit?id={order_id}">'
+            f"#{html.escape(order_name)}</a>:\n\n"
+            f"{safe_text}{html.escape(attachment_line)}\n\n"
+            "Ответьте в поле «Комментарий» этого заказа в МоемСкладе."
+        )
+        await self._bot().send_message(
+            self.help_chat_id,
+            message,
+            disable_web_page_preview=True,
+        )
 
 
 telegram_sender = Sender()

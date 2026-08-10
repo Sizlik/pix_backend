@@ -8,6 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from config import Settings, get_settings
 from db.redis import get_redis_backend
+from dependecies.order_chat import get_order_chat_runtime
 from errors import IntegrationNotConfigured
 from routes.bitrix import router as router_bitrix
 from routes.bot import router as router_bot
@@ -28,6 +29,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(application: FastAPI):
         FastAPICache.init(get_redis_backend(), prefix="fastapi-cache")
         scheduler = None
+        order_chat_runtime = None
+        if settings.enable_moysklad_order_chat:
+            order_chat_runtime = get_order_chat_runtime(settings)
+            await order_chat_runtime.storage.ensure_bucket()
+            await order_chat_runtime.worker.start()
+            application.state.order_chat_runtime = order_chat_runtime
         if settings.enable_scheduler:
             scheduler = AsyncIOScheduler()
             scheduler.add_job(change_states_on_moysklad, "interval", hours=1)
@@ -37,6 +44,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if order_chat_runtime is not None:
+                await order_chat_runtime.worker.stop()
             if scheduler is not None:
                 scheduler.shutdown(wait=False)
 
