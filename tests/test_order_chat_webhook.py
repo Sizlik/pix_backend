@@ -9,6 +9,10 @@ from db.schemas.chat import MoySkladWebhookPayload
 from dependecies.order_chat import get_order_chat_webhook_receiver
 from main import create_app
 from routes.integration.order_chat_webhook import OrderChatWebhookReceiver
+from scripts.register_moysklad_order_chat_webhook import (
+    build_webhook_url,
+    redact_webhook_url,
+)
 
 
 def payload(action="UPDATE", entity_type="customerorder"):
@@ -98,3 +102,16 @@ async def test_receiver_uses_request_and_order_as_dedup_identity():
     event = repository.enqueue_events.await_args.args[0][0]
     assert event.order_id == UUID("00000000-0000-0000-0000-000000000001")
     assert event.dedup_key == ("moysklad:request-1:00000000-0000-0000-0000-000000000001")
+
+
+def test_registration_url_uses_configured_secret_but_redaction_never_returns_it():
+    url = build_webhook_url("https://pixlogistic.com/", "super-secret")
+
+    assert url == (
+        "https://pixlogistic.com/api_v1/integration/webhooks/"
+        "order-chat/super-secret"
+    )
+    assert redact_webhook_url(url) == (
+        "https://pixlogistic.com/api_v1/integration/webhooks/order-chat/***"
+    )
+    assert "super-secret" not in redact_webhook_url(url)

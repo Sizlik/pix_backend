@@ -12,7 +12,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-services.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1
 ```
 
-The application runs directly on Windows; only PostgreSQL and Redis run in Docker. Local setup does not run Alembic and does not require external integration credentials.
+The application runs directly on Windows; PostgreSQL, Redis, and a source-built pinned MinIO run in Docker. Local setup does not run Alembic and does not require external integration credentials. MoySklad order chat stays disabled by default, so ordinary setup and checks remain offline.
 
 - Swagger UI: `http://127.0.0.1:8000/docs`
 - Liveness: `http://127.0.0.1:8000/api_v1/health`
@@ -29,3 +29,5 @@ The frontend lives in the adjacent `../pix_frontend_v2` checkout and defaults to
 - [Agent guide](AGENTS.md)
 
 External integrations are lazy: an endpoint that needs an unconfigured integration returns a sanitized service-unavailable error rather than breaking application startup.
+
+The order-only chat stores immutable history in PostgreSQL and attachments in MinIO, mirrors client messages to MoySklad customer-order comments/files, and keeps Telegram as a side notification channel. See the architecture, environment, local-development, and security documents above before enabling it or registering its webhook.
