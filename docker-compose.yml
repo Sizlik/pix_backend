@@ -20,13 +20,17 @@ services:
     restart: always
 
   backend:
+    build:
+      context: .
     image: backend:latest
     network_mode: "host"
     env_file:
       - .env
     depends_on:
-      - database
-      - minio
+      database:
+        condition: service_started
+      minio:
+        condition: service_healthy
     restart: always
 
   minio:
