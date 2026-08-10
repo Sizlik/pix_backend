@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -7,9 +8,16 @@ from db.schemas.orders import (
     ExistingOrderPositionChange,
     NewOrderPositionChange,
     OrderChangesRequest,
+    OrderChangesResponse,
 )
-from errors import InvalidOrderChanges
+from errors import (
+    InvalidOrderChanges,
+    OrderNotAccessible,
+    OrderNotEditable,
+    OrderVersionConflict,
+)
 from manager.order_changes import (
+    OrderChangesManager,
     build_order_change_plan,
     is_order_editable,
 )
@@ -116,3 +124,213 @@ def test_plan_recognizes_noop_and_rejects_unknown_position():
                 )
             ],
         )
+
+
+def order_payload(
+    status="Подтвержден менеджером", updated="2026-08-10 12:00:00.000"
+):
+    return {
+        "id": "00000000-0000-0000-0000-000000000010",
+        "name": "101",
+        "updated": updated,
+        "state": {"name": status},
+        "agent": {
+            "meta": {
+                "href": (
+                    "https://api.moysklad.ru/counterparty/"
+                    "00000000-0000-0000-0000-000000000020"
+                )
+            }
+        },
+        "meta": {
+            "uuidHref": "https://online.moysklad.ru/app/#customerorder/edit?id=order"
+        },
+        "positions": {"rows": current_rows()},
+    }
+
+
+class StubCustomerOrders:
+    def __init__(self, order=None, error=None):
+        self.order = order or order_payload()
+        self.error = error
+        self.replacements = []
+
+    async def get_order_by_id(self, order_id):
+        return self.order
+
+    async def get_state_meta(self, state_name):
+        assert state_name == "Изменен клиентом"
+        return {"href": "https://api.moysklad.ru/state/changed"}
+
+    async def replace_positions_and_state(self, order_id, positions, state_meta):
+        if self.error:
+            raise self.error
+        self.replacements.append((str(order_id), positions, state_meta))
+        return {
+            **self.order,
+            "updated": "2026-08-10 12:01:00.000",
+            "state": {"name": "Изменен клиентом"},
+            "positions": {"rows": positions},
+        }
+
+
+class StubProducts:
+    def __init__(self):
+        self.orders = []
+
+    async def create_products(self, order, user):
+        self.orders.append(order)
+        return [
+            {"meta": {"href": "https://api.moysklad.ru/product/new"}}
+            for _ in order.order_items
+        ]
+
+
+class StubNotifier:
+    def __init__(self, error=None):
+        self.error = error
+        self.messages = []
+
+    async def send_group_message(self, text):
+        if self.error:
+            raise self.error
+        self.messages.append(text)
+
+
+def make_user():
+    return SimpleNamespace(
+        moysklad_counterparty_id=UUID("00000000-0000-0000-0000-000000000020"),
+        first_name="<Иван>",
+        name_id=42,
+    )
+
+
+@pytest.mark.asyncio
+async def test_manager_updates_positions_and_state_once_then_notifies_once():
+    orders = StubCustomerOrders()
+    products = StubProducts()
+    notifier = StubNotifier()
+    manager = OrderChangesManager(orders, products, notifier)
+    request = OrderChangesRequest(
+        expected_updated="2026-08-10 12:00:00.000",
+        positions=[
+            ExistingOrderPositionChange(id=POSITION_1, count=3),
+            NewOrderPositionChange(
+                link="https://shop.example/item", count=1, comment="black"
+            ),
+        ],
+    )
+
+    result = await manager.save_changes(make_user(), orders.order["id"], request)
+
+    assert isinstance(result, OrderChangesResponse)
+    assert result.changed is True
+    assert result.notification_sent is True
+    assert len(orders.replacements) == 1
+    _, positions, state_meta = orders.replacements[0]
+    assert state_meta == {"href": "https://api.moysklad.ru/state/changed"}
+    assert positions[0]["id"] == str(POSITION_1)
+    assert positions[0]["quantity"] == 3
+    assert positions[0]["price"] == 12500
+    assert positions[1] == {
+        "quantity": 1,
+        "price": 0,
+        "discount": 0,
+        "vat": 0,
+        "vatEnabled": False,
+        "reserve": 0,
+        "assortment": {
+            "meta": {"href": "https://api.moysklad.ru/product/new"}
+        },
+    }
+    assert len(notifier.messages) == 1
+    assert "&lt;Иван&gt;" in notifier.messages[0]
+    assert "Добавлено: 1" in notifier.messages[0]
+    assert "Удалено: 1" in notifier.messages[0]
+    assert "Количество изменено: 1" in notifier.messages[0]
+
+
+@pytest.mark.asyncio
+async def test_manager_noop_does_not_change_state_create_products_or_notify():
+    orders = StubCustomerOrders()
+    products = StubProducts()
+    notifier = StubNotifier()
+    manager = OrderChangesManager(orders, products, notifier)
+    request = OrderChangesRequest(
+        expected_updated=orders.order["updated"],
+        positions=[
+            ExistingOrderPositionChange(id=POSITION_1, count=1),
+            ExistingOrderPositionChange(id=POSITION_2, count=2),
+        ],
+    )
+
+    result = await manager.save_changes(make_user(), orders.order["id"], request)
+
+    assert result.changed is False
+    assert result.notification_sent is None
+    assert orders.replacements == []
+    assert products.orders == []
+    assert notifier.messages == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("order", "expected_error"),
+    [
+        (order_payload(status="Принят к исполнению"), OrderNotEditable),
+        (order_payload(updated="2026-08-10 12:00:01.000"), OrderVersionConflict),
+        (
+            {
+                **order_payload(),
+                "agent": {
+                    "meta": {
+                        "href": "https://api.moysklad.ru/counterparty/other"
+                    }
+                },
+            },
+            OrderNotAccessible,
+        ),
+    ],
+)
+async def test_manager_rejects_status_version_and_owner_before_side_effects(
+    order, expected_error
+):
+    orders = StubCustomerOrders(order)
+    products = StubProducts()
+    notifier = StubNotifier()
+    manager = OrderChangesManager(orders, products, notifier)
+    request = OrderChangesRequest(
+        expected_updated="2026-08-10 12:00:00.000",
+        positions=[ExistingOrderPositionChange(id=POSITION_1, count=2)],
+    )
+
+    with pytest.raises(expected_error):
+        await manager.save_changes(make_user(), order["id"], request)
+
+    assert orders.replacements == []
+    assert products.orders == []
+    assert notifier.messages == []
+
+
+@pytest.mark.asyncio
+async def test_moysklad_failure_skips_telegram_and_telegram_failure_returns_warning():
+    request = OrderChangesRequest(
+        expected_updated="2026-08-10 12:00:00.000",
+        positions=[ExistingOrderPositionChange(id=POSITION_1, count=2)],
+    )
+    failed_orders = StubCustomerOrders(error=RuntimeError("moysklad unavailable"))
+    notifier = StubNotifier()
+    with pytest.raises(RuntimeError, match="moysklad unavailable"):
+        await OrderChangesManager(
+            failed_orders, StubProducts(), notifier
+        ).save_changes(make_user(), failed_orders.order["id"], request)
+    assert notifier.messages == []
+
+    orders = StubCustomerOrders()
+    result = await OrderChangesManager(
+        orders,
+        StubProducts(),
+        StubNotifier(error=RuntimeError("telegram unavailable")),
+    ).save_changes(make_user(), orders.order["id"], request)
+    assert result.changed is True
+    assert result.notification_sent is False
