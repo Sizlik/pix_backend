@@ -31,6 +31,12 @@ def validate_production_settings(
 
     if settings.app_env != "production":
         _add(issues, "APP_ENV", "must be production")
+    _require_text(issues, "POSTGRES_DRIVER", settings.postgres_driver)
+    _require_text(issues, "POSTGRES_USER", settings.postgres_user)
+    _require_text(issues, "POSTGRES_DB", settings.postgres_db)
+    _require_text(issues, "POSTGRES_HOST", settings.postgres_host)
+    if not 1 <= settings.db_port <= 65535:
+        _add(issues, "DB_PORT", "must be a valid TCP port")
     _require_strong_secret(
         issues,
         "POSTGRES_PASSWORD",
@@ -49,6 +55,10 @@ def validate_production_settings(
         settings.reset_password_token_secret,
         forbidden=LOCAL_RESET_SECRET,
     )
+    if not _is_redis_url(settings.redis_url):
+        _add(issues, "REDIS_URL", "must be a Redis URL")
+    if settings.token_lifetime <= 0:
+        _add(issues, "TOKEN_LIFETIME", "must be positive")
     if not settings.cors_origins or not all(
         _is_https_origin(origin) for origin in settings.cors_origins
     ):
@@ -165,6 +175,17 @@ def _is_public_api_url(value: str | None) -> bool:
         and parsed.username is None
         and parsed.password is None
         and parsed.path == "/api_v1"
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+    )
+
+
+def _is_redis_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return (
+        parsed.scheme in {"redis", "rediss"}
+        and bool(parsed.hostname)
         and not parsed.params
         and not parsed.query
         and not parsed.fragment

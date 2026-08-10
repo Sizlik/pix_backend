@@ -4,6 +4,11 @@
 
 Never copy production values into this document, `.env.example`, source code, logs, or `AGENTS.md`.
 
+Use `.env.production.example` as a key-by-key merge reference for the existing
+ignored server `.env`. Do not replace the working server file wholesale. The
+tracked template contains safe non-secret values only; every blank credential
+must be supplied through the production secret store or ignored server `.env`.
+
 ## Production inventory
 
 | Variable | Scope | Required in production | Secret | Format | Purpose |
