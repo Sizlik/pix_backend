@@ -2,22 +2,21 @@ import json
 
 from bot.sender import telegram_sender
 from db.models.users import User, UserDatabase
-from db.notification_repository import NotificationRepository
 from db.postgres import async_session_maker
 from db.schemas.notifications import NotificationCreate, NotificationTypes
+from dependecies.notifications import build_notification_manager
 from manager.moysklad import (
     CustomerOrderManager,
     CustomerOrderRepository,
     PurchaseOrderManager,
     PurchaseOrderRepository,
 )
-from manager.notifications import NotificationManager
 from manager.privoz_order import PrivozManager, PrivozRepository
 
 privoz_manager = PrivozManager(PrivozRepository())
 customer_order_manager = CustomerOrderManager(CustomerOrderRepository())
 purchase_order_manager = PurchaseOrderManager(PurchaseOrderRepository())
-notification_manager = NotificationManager(NotificationRepository())
+notification_manager = build_notification_manager()
 
 
 async def change_states_on_moysklad():

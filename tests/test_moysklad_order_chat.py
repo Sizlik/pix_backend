@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
+import pytest
+
 from db.moysklad_order_chat_repository import MoySkladFile
 from manager.moysklad_order_chat import MoySkladOrderChatSynchronizer
 from manager.order_chat_format import (
@@ -246,20 +248,62 @@ def inbound_event(audit="audit-1"):
     )
 
 
-def inbound_fixture():
+def inbound_fixture(notification_manager=None):
     repository = InboundRepository()
     canonical = f"{CHAT_HEADER}\n\n[10.08.2026 12:00] Клиент: Где заказ?\n\n{REPLY_PROMPT}"
     repository.state.rendered_description_hash = description_hash(canonical)
     moysklad = InboundMoySklad(canonical)
     storage = InboundStorage()
+    notification_options = {}
+    if notification_manager is not None:
+        notification_options["notification_manager"] = notification_manager
     synchronizer = MoySkladOrderChatSynchronizer(
         repository=repository,
         moysklad=moysklad,
         storage=storage,
         attachment_max_count=10,
         attachment_max_bytes=20 * 1024 * 1024,
+        **notification_options,
     )
     return synchronizer, repository, moysklad, storage, canonical
+
+
+class RecordingNotificationManager:
+    def __init__(self):
+        self.user_ids = []
+
+    async def notify_count_changed(self, user_id):
+        self.user_ids.append(user_id)
+
+
+async def test_manager_reply_publishes_notification_count_after_transaction():
+    notification_manager = RecordingNotificationManager()
+    synchronizer, repository, moysklad, _, canonical = inbound_fixture(
+        notification_manager=notification_manager
+    )
+    moysklad.description = canonical + "\nПринято"
+
+    await synchronizer.process_moysklad_update(inbound_event("count"))
+
+    assert repository.notifications
+    assert notification_manager.user_ids == [CLIENT_ID]
+
+
+async def test_failed_manager_message_transaction_does_not_publish_count():
+    notification_manager = RecordingNotificationManager()
+    synchronizer, repository, moysklad, _, canonical = inbound_fixture(
+        notification_manager=notification_manager
+    )
+    moysklad.description = canonical + "\nПринято"
+
+    async def fail(**values):
+        raise RuntimeError("transaction failed")
+
+    repository.create_manager_message_with_notification = fail
+    with pytest.raises(RuntimeError, match="transaction failed"):
+        await synchronizer.process_moysklad_update(inbound_event("failure"))
+
+    assert notification_manager.user_ids == []
 
 
 async def test_manager_reply_and_prefixed_file_create_one_immutable_message():
