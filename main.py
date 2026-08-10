@@ -9,6 +9,7 @@ from starlette.middleware.cors import CORSMiddleware
 from config import Settings, get_settings
 from db.redis import get_redis_backend
 from dependecies.chat import get_chat_realtime
+from dependecies.notifications import get_notification_realtime
 from dependecies.order_chat import get_order_chat_runtime
 from errors import AddressNameConflict, AddressNotFound, IntegrationNotConfigured
 from routes.addresses import router as router_addresses
@@ -32,12 +33,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         FastAPICache.init(get_redis_backend(), prefix="fastapi-cache")
         scheduler = None
         order_chat_runtime = None
-        realtime = get_chat_realtime()
+        chat_realtime = get_chat_realtime()
+        notification_realtime = get_notification_realtime()
         realtime_started = settings.app_env != "test"
         if realtime_started:
-            await realtime.start()
+            await chat_realtime.start()
+            await notification_realtime.start()
         if settings.enable_moysklad_order_chat:
-            order_chat_runtime = get_order_chat_runtime(settings, realtime)
+            order_chat_runtime = get_order_chat_runtime(settings, chat_realtime)
             await order_chat_runtime.storage.ensure_bucket()
             await order_chat_runtime.worker.start()
             application.state.order_chat_runtime = order_chat_runtime
@@ -53,7 +56,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if order_chat_runtime is not None:
                 await order_chat_runtime.worker.stop()
             if realtime_started:
-                await realtime.stop()
+                await notification_realtime.stop()
+                await chat_realtime.stop()
             if scheduler is not None:
                 scheduler.shutdown(wait=False)
 

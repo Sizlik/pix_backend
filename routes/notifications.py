@@ -1,15 +1,29 @@
-from fastapi import APIRouter, Depends
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi_users.authentication import RedisStrategy
 
 from db.models.users import User
 from db.order_chat_repository import OrderChatRepository
-from db.schemas.notifications import NotificationCreate, NotificationTypes
+from db.redis import get_redis_strategy
+from db.schemas.notifications import (
+    NotificationCountEvent,
+    NotificationCountResponse,
+    NotificationCreate,
+    NotificationTypes,
+)
 from dependecies.chat import get_message_manager
 from dependecies.moysklad import get_customer_order_manager
-from dependecies.notifications import get_notification_manager
+from dependecies.notifications import (
+    get_notification_manager,
+    get_notification_realtime,
+)
 from dependecies.order_chat import get_order_chat_repository
 from manager.chat import MessageManager
 from manager.moysklad import CustomerOrderManager
+from manager.notification_realtime import NotificationRealtime
 from manager.notifications import NotificationManager
+from manager.users import get_user_manager
 from routes.users import current_user_dependency
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -68,13 +82,23 @@ async def get_user_notifications(
     return response
 
 
-@router.post("/read/{id}")
-async def read_one_notification(
-    id: str,
+@router.get("/unread-count", response_model=NotificationCountResponse)
+async def unread_count(
     user: User = Depends(current_user_dependency),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
-    return await notification_manager.read_notification(id)
+    count = await notification_manager.unread_count(user.id)
+    return NotificationCountResponse(unread_count=count)
+
+
+@router.post("/read/{id}")
+async def read_one_notification(
+    id: UUID,
+    user: User = Depends(current_user_dependency),
+    notification_manager: NotificationManager = Depends(get_notification_manager),
+):
+    count = await notification_manager.read_notification(user.id, id)
+    return NotificationCountResponse(unread_count=count)
 
 
 @router.post("/read")
@@ -82,9 +106,36 @@ async def read_all_notifications(
     user: User = Depends(current_user_dependency),
     notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
-    notifications = await notification_manager.get_unreaded_notifications_by_user(user)
+    count = await notification_manager.read_all_notifications(user.id)
+    return NotificationCountResponse(unread_count=count)
 
-    for i in notifications:
-        await notification_manager.read_notification(i.id)
 
-    return
+@router.websocket("/ws")
+async def notification_websocket(
+    websocket: WebSocket,
+    redis_strategy: RedisStrategy = Depends(get_redis_strategy),
+    user_manager=Depends(get_user_manager),
+    notification_manager: NotificationManager = Depends(get_notification_manager),
+    realtime: NotificationRealtime = Depends(get_notification_realtime),
+):
+    token = websocket.query_params.get("auth")
+    if not token:
+        await websocket.close(code=4401)
+        return
+    user = await redis_strategy.read_token(token, user_manager)
+    if not user:
+        await websocket.close(code=4401)
+        return
+
+    user_id = str(user.id)
+    await realtime.connect(user_id, websocket)
+    try:
+        count = await notification_manager.unread_count(user.id)
+        event = NotificationCountEvent(unread_count=count)
+        await websocket.send_json(event.model_dump())
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await realtime.disconnect(user_id, websocket)
