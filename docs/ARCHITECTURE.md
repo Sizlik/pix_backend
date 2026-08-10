@@ -6,7 +6,7 @@
 flowchart LR
     U["Browser user"] --> F["Next.js frontend"]
     F -->|"REST /api_v1"| A["FastAPI backend"]
-    F -->|"WebSocket /api_v1/chat/ws"| A
+    F -->|"WebSocket /api_v1/chat/ws and /api_v1/notifications/ws"| A
     A --> P[("PostgreSQL")]
     A --> R[("Redis")]
     A --> S[("MinIO")]
@@ -53,7 +53,7 @@ All paths below are relative to `/api_v1`.
 | Addresses | `/addresses` GET/POST, `/addresses/{id}` PATCH/DELETE | User-owned address-book CRUD, case-insensitive title search, pagination, and last-used default | PostgreSQL |
 | Payments | `/payment`, `/payment/vault_courses` | MoySklad payments and cached exchange rates | MoySklad, Redis, Frankfurter |
 | Organizations | `/organizations/*` | Owners, organization users, aggregate orders | PostgreSQL, MoySklad, Privoz |
-| Notifications | `/notifications/*` | Create, enrich, list, and mark notifications | PostgreSQL, MoySklad, chat |
+| Notifications | `/notifications/`, `/notifications/unread-count`, `/notifications/read*`, `/notifications/ws` | Create, enrich, list, mark notifications, and stream each user's absolute unread count | PostgreSQL, Redis pub/sub, MoySklad, chat |
 | Chat | `/chat/ws`, `/chat/messages*`, `/chat/orders/{order_id}/messages`, `/chat/attachments/{id}` | General support plus immutable customer-order chat, files, pagination, and real-time delivery | Redis JWT/pub-sub, PostgreSQL, MinIO, MoySklad, Telegram |
 | Bot | `/bot/accept_transaction` | Notify configured Telegram group about a transaction | Telegram |
 | Integrations | `/integration/bitrix/*`, `/integration/orders/*`, `/integration/webhooks/*`, `/integration/webhooks/order-chat/{secret}`, `/integration/vaults/*` | Bitrix CRUD, service callbacks, order/invoice/order-chat webhooks, rate feed | Bitrix, MoySklad, PostgreSQL, external HTTP |
@@ -75,7 +75,7 @@ All paths below are relative to `/api_v1`.
 | `order_chat_state`, `moysklad_order_file` | Last observed MoySklad projection and deduplicated remote file observations |
 | `chat_outbox_event` | Transactional delivery work, retry state, webhook deduplication, and Telegram side notifications |
 | `privoz_order` | Scraped Privoz order number and state cache |
-| Redis | JWT token strategy, verification/reset code mapping, FastAPI cache, hourly currency-rate cache, and multi-worker chat pub/sub |
+| Redis | JWT token strategy, verification/reset code mapping, FastAPI cache, hourly currency-rate cache, multi-worker chat pub/sub, and per-user unread-notification count pub/sub |
 | MinIO `pix-order-chat` bucket | Canonical bytes for site and MoySklad order-chat attachments |
 
 SQLAlchemy models are imported through the application graph rather than a single model registry. Alembic migrations are the schema history and must be reviewed manually.
@@ -111,6 +111,8 @@ failure is reported separately and does not invite the client to resubmit the
 order mutation.
 
 For WebSocket chat, the client opens `/api_v1/chat/ws` with `auth` and optional `room` query parameters. The backend validates the token through Redis and performs a fresh MoySklad owner check for order rooms. Connections remain local to each worker, while Redis pub/sub fans persisted order messages and durable delivery-state events out to every worker and browser tab. Order-room sockets are outbound-only; clients create order messages and files through authenticated REST. The existing general-support room remains bidirectional and otherwise unchanged.
+
+For notification counters, the dashboard first reads `GET /api_v1/notifications/unread-count`, then subscribes to `/api_v1/notifications/ws?auth=...`. The server publishes an absolute `{type: "notification_count", unread_count: N}` value on a user-scoped Redis channel after a notification is committed or marked read. Hovering or clicking an unread row marks only that user's notification as read; `POST /api_v1/notifications/read` performs one bulk update for all of that user's unread notifications. The browser applies optimistic counter changes and reconciles from the authoritative response, WebSocket event, focus refresh, or reconnect.
 
 Order chat has two durable flows. From the site, the backend verifies current order ownership, stores an immutable PostgreSQL message and MinIO objects in one use case, and commits an outbox event. The worker projects the bounded transcript into the standard MoySklad customer-order `description`, uploads client mirror/history files, and sends a Telegram group alert. From MoySklad, the fast secret-path webhook commits inbound work, then a worker parses text below the reply marker and only files prefixed `[КЛИЕНТ]`, rechecks the owner, stores new immutable history/MinIO objects, and publishes through Redis/WebSocket to the site. A client Telegram alert is a side notification. Internal manager files stay hidden. MoySklad is an operator projection; PostgreSQL and MinIO are canonical history.
 
