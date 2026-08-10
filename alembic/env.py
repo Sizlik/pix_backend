@@ -6,9 +6,31 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-
+from db.models import (
+    chat as chat,
+)
+from db.models import (
+    notifications as notifications,
+)
+from db.models import (
+    order_chat as order_chat,
+)
+from db.models import (
+    orders as orders,
+)
+from db.models import (
+    organizations as organizations,
+)
+from db.models import (
+    privoz_order as privoz_order,
+)
+from db.models import (
+    transactions as transactions,
+)
+from db.models import (
+    users as users,
+)
 from db.postgres import Base
-from db.models import users, transactions, orders, chat, privoz_order, notifications, organizations
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
