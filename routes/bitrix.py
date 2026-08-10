@@ -1,16 +1,17 @@
 from fastapi import APIRouter
 
-from manager.bitrix import BitrixManager, BitrixCrmContact, BitrixCrmDeal, BitrixCrmProduct
 from db.schemas.bitrix_contact import AddContactFields, AddDealFields, AddProductFields
+from manager.bitrix import BitrixCrmContact, BitrixCrmDeal, BitrixCrmProduct, BitrixManager
+from routes.integration.order_chat_webhook import router as router_order_chat_webhook
 from routes.integration.orders import router as router_orders
-from routes.integration.webhooks import router as router_webhooks
 from routes.integration.vaults import router as router_vaults
-
+from routes.integration.webhooks import router as router_webhooks
 
 router = APIRouter(prefix="/integration", tags=["Integration"])
 router.include_router(router_orders)
 router.include_router(router_webhooks)
 router.include_router(router_vaults)
+router.include_router(router_order_chat_webhook)
 
 
 @router.get("/bitrix/contacts/{contact_id}")
@@ -41,4 +42,3 @@ async def get_bitrix_product(product_id: str):
 @router.post("/bitrix/product/")
 async def create_bitrix_product(fields: AddProductFields):
     return BitrixManager(BitrixCrmProduct()).add(fields.model_dump())
-

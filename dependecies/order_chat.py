@@ -41,6 +41,20 @@ def get_order_chat_service() -> OrderChatService:
     )
 
 
+def get_order_chat_repository() -> OrderChatRepository:
+    return OrderChatRepository()
+
+
+def get_order_chat_webhook_receiver():
+    from routes.integration.order_chat_webhook import OrderChatWebhookReceiver
+
+    chat_settings = get_settings().require_order_chat()
+    return OrderChatWebhookReceiver(
+        repository=OrderChatRepository(),
+        secret=chat_settings.webhook_secret,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class OrderChatRuntime:
     storage: MinioObjectStorage
@@ -62,6 +76,8 @@ def get_order_chat_runtime(settings: Settings) -> OrderChatRuntime:
         repository=repository,
         moysklad=moysklad,
         storage=storage,
+        attachment_max_count=chat_settings.attachment_max_count,
+        attachment_max_bytes=chat_settings.attachment_max_bytes,
     )
     telegram_handlers = OrderChatTelegramHandlers(repository, telegram_sender)
     worker = OrderChatOutboxWorker(
@@ -70,6 +86,7 @@ def get_order_chat_runtime(settings: Settings) -> OrderChatRuntime:
         handlers={
             "sync_order": lambda event: synchronizer.sync_order(event.order_id),
             "telegram_client_alert": telegram_handlers.client_alert,
+            "process_moysklad_update": synchronizer.process_moysklad_update,
         },
         max_attempts=chat_settings.outbox_max_attempts,
         base_delay_seconds=chat_settings.outbox_base_delay_seconds,

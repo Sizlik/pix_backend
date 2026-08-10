@@ -260,6 +260,7 @@ class OrderChatRepository:
         external_key: str,
         attachments: tuple[NewAttachment, ...] = (),
         outbox_events: tuple[NewOutboxEvent, ...] = (),
+        moysklad_files: tuple[NewMoySkladOrderFile, ...] = (),
         created_at: datetime | None = None,
     ) -> StoredMessage:
         async with self._session_factory() as session:
@@ -286,6 +287,7 @@ class OrderChatRepository:
                         )
                     )
                     await self._insert_outbox_events(session, outbox_events)
+                    await self._insert_moysklad_files(session, moysklad_files)
                 else:
                     stored_attachments = await self._load_attachments(session, message.id)
                 return _stored_message(message, stored_attachments)
@@ -361,6 +363,17 @@ class OrderChatRepository:
             attachments = await self._load_attachments(session, message.id)
             return _stored_message(message, attachments)
 
+    async def get_message_by_external_key(self, external_key: str) -> StoredMessage | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(OrderChatMessage).where(OrderChatMessage.external_key == external_key)
+            )
+            message = result.scalar_one_or_none()
+            if message is None:
+                return None
+            attachments = await self._load_attachments(session, message.id)
+            return _stored_message(message, attachments)
+
     async def get_attachment_for_client(self, attachment_id: UUID) -> tuple[OrderChatAttachment, StoredMessage] | None:
         async with self._session_factory() as session:
             result = await session.execute(
@@ -396,23 +409,7 @@ class OrderChatRepository:
             return
         async with self._session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    pg_insert(MoySkladOrderFile)
-                    .values(
-                        [
-                            {
-                                "id": uuid4(),
-                                "order_id": item.order_id,
-                                "moysklad_file_id": item.moysklad_file_id,
-                                "filename": item.filename,
-                                "disposition": item.disposition,
-                                "message_id": item.message_id,
-                            }
-                            for item in files
-                        ]
-                    )
-                    .on_conflict_do_nothing(index_elements=["order_id", "moysklad_file_id"])
-                )
+                await self._insert_moysklad_files(session, files)
 
     async def list_moysklad_files(self, order_id: UUID) -> list[MoySkladOrderFile]:
         async with self._session_factory() as session:
@@ -649,6 +646,27 @@ class OrderChatRepository:
                 ]
             )
             .on_conflict_do_nothing(index_elements=["dedup_key"])
+        )
+
+    async def _insert_moysklad_files(self, session, files) -> None:
+        if not files:
+            return
+        await session.execute(
+            pg_insert(MoySkladOrderFile)
+            .values(
+                [
+                    {
+                        "id": uuid4(),
+                        "order_id": item.order_id,
+                        "moysklad_file_id": item.moysklad_file_id,
+                        "filename": item.filename,
+                        "disposition": item.disposition,
+                        "message_id": item.message_id,
+                    }
+                    for item in files
+                ]
+            )
+            .on_conflict_do_nothing(index_elements=["order_id", "moysklad_file_id"])
         )
 
     async def _load_attachments(self, session, message_id: UUID) -> tuple[OrderChatAttachment, ...]:

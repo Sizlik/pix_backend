@@ -4,7 +4,12 @@ from uuid import UUID
 
 from db.moysklad_order_chat_repository import MoySkladFile
 from manager.moysklad_order_chat import MoySkladOrderChatSynchronizer
-from manager.order_chat_format import CHAT_HEADER, PRIOR_COMMENT_FILENAME
+from manager.order_chat_format import (
+    CHAT_HEADER,
+    PRIOR_COMMENT_FILENAME,
+    REPLY_PROMPT,
+    description_hash,
+)
 
 ORDER_ID = UUID("00000000-0000-0000-0000-000000000001")
 CLIENT_ID = UUID("00000000-0000-0000-0000-000000000002")
@@ -132,3 +137,206 @@ async def test_repeated_sync_does_not_duplicate_comment_backup():
     assert [item.filename for item in moysklad.uploaded if item.filename == PRIOR_COMMENT_FILENAME] == [
         PRIOR_COMMENT_FILENAME
     ]
+
+
+class InboundRepository(FakeRepository):
+    def __init__(self):
+        super().__init__()
+        self.state.initialized = True
+        self.state.rendered_description_hash = None
+        self.messages = [self.message]
+        self.known_files = []
+        self.events = []
+        self.notifications = []
+
+    async def get_state_client(self, order_id):
+        return SimpleNamespace(
+            id=CLIENT_ID,
+            moysklad_counterparty_id=UUID("00000000-0000-0000-0000-000000000099"),
+        )
+
+    async def list_transcript(self, order_id):
+        return self.messages
+
+    async def list_moysklad_files(self, order_id):
+        return self.known_files
+
+    async def record_moysklad_files(self, files):
+        self.recorded.extend(files)
+        self.known_files.extend(files)
+
+    async def get_message_by_external_key(self, external_key):
+        return next(
+            (item for item in self.messages if getattr(item, "external_key", None) == external_key),
+            None,
+        )
+
+    async def create_manager_message_with_notification(self, **values):
+        attachments = tuple(
+            SimpleNamespace(
+                id=item.id,
+                original_filename=item.original_filename,
+                mime_type=item.mime_type,
+                size_bytes=item.size_bytes,
+            )
+            for item in values["attachments"]
+        )
+        message = SimpleNamespace(
+            id=values["message_id"],
+            order_id=values["order_id"],
+            sender_kind="manager",
+            body=values["body"],
+            created_at=datetime.now(timezone.utc),
+            attachments=attachments,
+            external_key=values["external_key"],
+        )
+        self.messages.append(message)
+        self.events.extend(values["outbox_events"])
+        self.notifications.append(message.id)
+        self.recorded.extend(values.get("moysklad_files", ()))
+        self.known_files.extend(values.get("moysklad_files", ()))
+        return message
+
+    async def enqueue_events(self, events):
+        self.events.extend(events)
+
+
+class InboundStorage(FakeStorage):
+    def __init__(self):
+        self.objects = {}
+
+    async def put(self, key, content, content_type):
+        self.objects[key] = content
+
+    async def delete(self, key):
+        self.objects.pop(key, None)
+
+
+class InboundMoySklad(FakeMoySklad):
+    def __init__(self, canonical):
+        super().__init__()
+        self.description = canonical
+        self.files = []
+        self.file_content = {}
+
+    async def get_order(self, order_id):
+        return {
+            "id": str(order_id),
+            "description": self.description,
+            "agent": {
+                "meta": {
+                    "href": (
+                        "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/00000000-0000-0000-0000-000000000099"
+                    )
+                }
+            },
+        }
+
+    async def download_file(self, download_href):
+        return self.file_content[download_href]
+
+
+def inbound_event(audit="audit-1"):
+    return SimpleNamespace(
+        order_id=ORDER_ID,
+        payload={
+            "request_id": f"request-{audit}",
+            "audit_href": f"https://api.moysklad.ru/audit/{audit}",
+        },
+    )
+
+
+def inbound_fixture():
+    repository = InboundRepository()
+    canonical = f"{CHAT_HEADER}\n\n[10.08.2026 12:00] Клиент: Где заказ?\n\n{REPLY_PROMPT}"
+    repository.state.rendered_description_hash = description_hash(canonical)
+    moysklad = InboundMoySklad(canonical)
+    storage = InboundStorage()
+    synchronizer = MoySkladOrderChatSynchronizer(
+        repository=repository,
+        moysklad=moysklad,
+        storage=storage,
+        attachment_max_count=10,
+        attachment_max_bytes=20 * 1024 * 1024,
+    )
+    return synchronizer, repository, moysklad, storage, canonical
+
+
+async def test_manager_reply_and_prefixed_file_create_one_immutable_message():
+    synchronizer, repository, moysklad, storage, canonical = inbound_fixture()
+    public_id = UUID("00000000-0000-0000-0000-000000000201")
+    href = "https://api.moysklad.ru/api/remap/1.2/download/public"
+    moysklad.description = canonical + "\nОтправили ваш заказ"
+    moysklad.files = [MoySkladFile(public_id, "[КЛИЕНТ] фото.jpg", 10, href)]
+    moysklad.file_content[href] = b"\xff\xd8\xffimage"
+
+    await synchronizer.process_moysklad_update(inbound_event())
+
+    message = repository.messages[-1]
+    assert message.sender_kind == "manager"
+    assert message.body == "Отправили ваш заказ"
+    assert message.attachments[0].original_filename == "фото.jpg"
+    assert repository.notifications == [message.id]
+    assert repository.events[-1].dedup_key == f"telegram_manager:{message.id}"
+    assert len(storage.objects) == 1
+    assert moysklad.description.endswith(REPLY_PROMPT)
+
+
+async def test_missing_reply_marker_alerts_staff_and_restores_description():
+    synchronizer, repository, moysklad, _, _ = inbound_fixture()
+    moysklad.description = "случайно переписанный комментарий"
+
+    await synchronizer.process_moysklad_update(inbound_event("bad-marker"))
+
+    assert len(repository.messages) == 1
+    assert repository.events[-1].event_type == "telegram_projection_error"
+    assert moysklad.description.endswith(REPLY_PROMPT)
+
+
+async def test_unprefixed_new_file_remains_internal():
+    synchronizer, repository, moysklad, _, _ = inbound_fixture()
+    moysklad.files = [
+        MoySkladFile(
+            UUID("00000000-0000-0000-0000-000000000202"),
+            "warehouse.pdf",
+            10,
+            "https://api.moysklad.ru/internal",
+        )
+    ]
+
+    await synchronizer.process_moysklad_update(inbound_event("internal"))
+
+    assert len(repository.messages) == 1
+    assert repository.recorded[-1].disposition == "internal"
+
+
+async def test_replayed_audit_does_not_duplicate_manager_message():
+    synchronizer, repository, moysklad, _, canonical = inbound_fixture()
+    moysklad.description = canonical + "\nПринято"
+
+    event = inbound_event("replay")
+    await synchronizer.process_moysklad_update(event)
+    await synchronizer.process_moysklad_update(event)
+
+    assert [item.body for item in repository.messages[1:]] == ["Принято"]
+
+
+async def test_invalid_public_batch_is_all_or_nothing_and_keeps_reply():
+    synchronizer, repository, moysklad, storage, canonical = inbound_fixture()
+    moysklad.description = canonical + "\nФайлы"
+    moysklad.files = [
+        MoySkladFile(
+            UUID(f"00000000-0000-0000-0000-{index:012d}"),
+            f"[КЛИЕНТ] {index}.jpg",
+            10,
+            f"https://api.moysklad.ru/download/{index}",
+        )
+        for index in range(1, 12)
+    ]
+
+    await synchronizer.process_moysklad_update(inbound_event("too-many"))
+
+    assert len(repository.messages) == 1
+    assert storage.objects == {}
+    assert repository.events[-1].event_type == "telegram_projection_error"
+    assert moysklad.description.endswith("Файлы")
