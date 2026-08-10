@@ -36,6 +36,7 @@ $ruffTargets = @(
     "manager/order_chat_format.py",
     "manager/bitrix.py",
     "manager/privoz_order.py",
+    "manager/production_config.py",
     "manager/users.py",
     "routes/bitrix.py",
     "routes/chat.py",
@@ -43,6 +44,7 @@ $ruffTargets = @(
     "routes/link_preview.py",
     "routes/notifications.py",
     "routes/orders.py",
+    "scripts/check_production_config.py",
     "scripts/register_moysklad_order_chat_webhook.py",
     "moysklad_webhooks_creator.py",
     "tests"

@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     privoz_username: str | None = None
     privoz_password: SecretStr | None = None
     mailersend_token: SecretStr | None = None
+    next_public_backend_url: str | None = None
+    pgadmin_default_email: str | None = None
+    pgadmin_default_password: SecretStr | None = None
     moysklad_order_chat_webhook_secret: SecretStr | None = None
     minio_endpoint: str | None = None
     minio_access_key: str | None = None
