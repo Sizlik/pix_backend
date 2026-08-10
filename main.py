@@ -10,7 +10,8 @@ from config import Settings, get_settings
 from db.redis import get_redis_backend
 from dependecies.chat import get_chat_realtime
 from dependecies.order_chat import get_order_chat_runtime
-from errors import IntegrationNotConfigured
+from errors import AddressNameConflict, AddressNotFound, IntegrationNotConfigured
+from routes.addresses import router as router_addresses
 from routes.bitrix import router as router_bitrix
 from routes.bot import router as router_bot
 from routes.chat import router as router_chat
@@ -60,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_router = APIRouter(prefix="/api_v1")
 
     api_router.include_router(router_users)
+    api_router.include_router(router_addresses)
     api_router.include_router(router_bot)
     api_router.include_router(router_payment)
     api_router.include_router(router_bitrix)
@@ -87,6 +89,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         exc: IntegrationNotConfigured,
     ):
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @application.exception_handler(AddressNotFound)
+    async def address_not_found_handler(request: Request, exc: AddressNotFound):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "detail": {
+                    "code": "address_not_found",
+                    "message": "Address not found",
+                }
+            },
+        )
+
+    @application.exception_handler(AddressNameConflict)
+    async def address_name_conflict_handler(
+        request: Request, exc: AddressNameConflict
+    ):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "address_name_conflict",
+                    "message": "Address name already exists",
+                }
+            },
+        )
 
     application.include_router(api_router)
     application.add_middleware(
