@@ -1,24 +1,11 @@
-import json
 from uuid import UUID
 
-from fastapi import WebSocket
 from sqlalchemy import and_
 
 from bot.sender import telegram_sender
 from db.models.chat import ChatRoom, Message
 from db.models.users import User
-from db.repository import SQLAlchemyRepository, AbstractRepository
-
-
-def singleton(class_):
-    instances = {}
-
-    def get_instance(*args, **kwargs):
-        if class_ not in instances:
-            instances[class_] = class_(*args, **kwargs)
-        return instances[class_]
-
-    return get_instance
+from db.repository import AbstractRepository, SQLAlchemyRepository
 
 
 class ChatRoomRepository(SQLAlchemyRepository):
@@ -63,36 +50,22 @@ class MessageManager:
         return await self.__repo.read_one(id)
 
 
-@singleton
 class ChatManager:
-    __instance = None
-
-    def __init__(self, message_manager: MessageManager):
-        self.connections = {}
+    def __init__(self, message_manager: MessageManager, realtime):
         self.message_manager = message_manager
+        self.realtime = realtime
 
-    async def connect(self, room_id, websocket: WebSocket):
-        await websocket.accept()
-        if room_id not in self.connections:
-            self.connections[room_id] = []
-        elif len(self.connections[room_id]):
-            await self.connections[room_id][0].close()
-        self.connections[room_id] = [websocket]
+    async def connect(self, room_id, websocket):
+        await self.realtime.connect(str(room_id), websocket)
 
-    def disconnect(self, room_id, websocket: WebSocket):
-        try:
-            self.connections[room_id].remove(websocket)
-        except:
-            pass
+    async def disconnect(self, room_id, websocket):
+        await self.realtime.disconnect(str(room_id), websocket)
 
     async def send_message_from_client(self, data, room_id, user):
-        print(self.connections)
         message = await self.message_manager.create_one(data)
+        data["id"] = str(message)
         data["first_name"] = user.first_name
         if user.email != "bot@pixlogistic.com":
             await telegram_sender.send_chat_message(data["message"], user, data["to_chat_room_id"])
-        for i in self.connections.get(room_id, ""):
-            await i.send_json(data)
+        await self.realtime.publish(str(room_id), data)
         return message
-
-

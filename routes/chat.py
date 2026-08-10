@@ -26,12 +26,17 @@ from db.schemas.chat import OrderChatMessageResponse, OrderChatPageResponse
 from db.schemas.notifications import NotificationCreate, NotificationTypes
 from dependecies.chat import get_chat_manager, get_chat_room_manager, get_message_manager
 from dependecies.notifications import get_notification_manager
-from dependecies.order_chat import get_order_chat_service
+from dependecies.order_chat import (
+    get_order_chat_access_policy,
+    get_order_chat_service,
+)
+from errors import IntegrationNotConfigured
 from manager.chat import ChatManager, ChatRoomManager, MessageManager
 from manager.chat_files import ChatFileRejected
 from manager.notifications import NotificationManager
 from manager.order_chat import (
     EmptyOrderChatMessage,
+    OrderChatAccessPolicy,
     OrderChatNotFound,
     OrderChatService,
     PendingUpload,
@@ -109,33 +114,54 @@ async def websocket_connection(
     redis_strategy: RedisStrategy = Depends(get_redis_strategy),
     user_manager=Depends(get_user_manager),
     chat_manager: ChatManager = Depends(get_chat_manager),
+    order_access_policy: OrderChatAccessPolicy = Depends(get_order_chat_access_policy),
 ):
-    token = websocket.query_params["auth"]
+    token = websocket.query_params.get("auth")
+    if not token:
+        await websocket.close(code=4401)
+        return
     user = await redis_strategy.read_token(token, user_manager)
 
     if not user:
-        await websocket.close()
+        await websocket.close(code=4401)
         return
 
     room_id = websocket.query_params.get("room", str(user.id))
-    print(room_id)
+    support_room = str(room_id) == str(user.id)
+    if not support_room:
+        try:
+            order_id = UUID(str(room_id))
+            await order_access_policy.assert_client_access(user, order_id)
+        except (ValueError, OrderChatNotFound, IntegrationNotConfigured):
+            await websocket.close(code=4404)
+            return
     await chat_manager.connect(room_id, websocket)
 
     try:
         while True:
             ws_data = await websocket.receive_json()
-            if not ws_data.get("to_chat_room_id"):
-                ws_data["to_chat_room_id"] = user.id
-
-            data = {
-                "message": ws_data["message"],
-                "from_user_id": str(user.id),
-                "to_chat_room_id": str(ws_data["to_chat_room_id"]),
-            }
-            await chat_manager.send_message_from_client(data, room_id, user)
+            if not support_room:
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "code": "order_chat_http_required",
+                    }
+                )
+                continue
+            await chat_manager.send_message_from_client(
+                {
+                    "message": ws_data["message"],
+                    "from_user_id": str(user.id),
+                    "to_chat_room_id": str(user.id),
+                },
+                room_id,
+                user,
+            )
 
     except WebSocketDisconnect:
-        chat_manager.disconnect(room_id, websocket)
+        pass
+    finally:
+        await chat_manager.disconnect(room_id, websocket)
 
 
 @router.post("/send_message")
@@ -148,6 +174,14 @@ async def send_message_by_endpoint(
     notification_manager: NotificationManager = Depends(get_notification_manager),
     user_db: UserDatabase = Depends(get_user_db),
 ):
+    if str(client_id) != str(to_chat_room):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "order_reply_in_moysklad_required",
+                "message": "Reply in the MoySklad customer order comment",
+            },
+        )
     if user.email == "bot@pixlogistic.com":
         data = {"message": message, "from_user_id": str(user.id), "to_chat_room_id": to_chat_room}
         message_id = await chat_manager.send_message_from_client(data, to_chat_room, user)

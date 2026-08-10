@@ -66,15 +66,16 @@ class Sender:
         )
 
     async def send_chat_message(self, text, user: User, chat_id):
-        if str(chat_id) != str(user.id):
-            order = await customer_order_manager.get_order_by_id(chat_id)
-            order.get("name")
-            message = f'{chat_id}\nid: {user.id}\nПользователь: {user.first_name}\nЗаказ: <a href="https://online.moysklad.ru/app/#customerorder/edit?id={chat_id}">#{order.get("name")}</a>\nКлиент #{user.name_id}\nНаписал в поддержку:\n\n{text}'
-        else:
-            message = (
-                f"{chat_id}\nПользователь: {user.first_name} Клиент #{user.name_id}\nНаписал в поддержку:\n\n{text}"
-            )
-        await self._bot().send_message(self.help_chat_id, message, reply_markup=await self.chat_keyboard())
+        message = (
+            f"{chat_id}\nПользователь: {html.escape(user.first_name)} "
+            f"Клиент #{user.name_id}\nНаписал в поддержку:\n\n"
+            f"{html.escape(text)}"
+        )
+        await self._bot().send_message(
+            self.help_chat_id,
+            message,
+            reply_markup=await self.chat_keyboard(),
+        )
 
     async def send_order_client_alert(
         self,
@@ -101,6 +102,33 @@ class Sender:
             message,
             disable_web_page_preview=True,
         )
+
+    async def send_order_manager_alert(
+        self,
+        telegram_id: int,
+        *,
+        order_id: str,
+        order_name: str,
+        text: str,
+        filenames: list[str],
+    ) -> None:
+        safe_text = html.escape(text) if text else "(отправлены файлы)"
+        file_line = "\nФайлы: " + ", ".join(filenames) if filenames else ""
+        message = (
+            "Менеджер Pix Logistic ответил по заказу "
+            f'<a href="https://client.pixlogistic.com/dashboard/orders/{order_id}">'
+            f"#{html.escape(order_name)}</a>:\n\n"
+            f"{safe_text}{html.escape(file_line)}"
+        )
+        await self._bot().send_message(telegram_id, message, disable_web_page_preview=True)
+
+    async def send_order_projection_error(self, *, order_id: str, code: str) -> None:
+        message = (
+            "Не удалось обработать переписку заказа "
+            f'<a href="https://online.moysklad.ru/app/#customerorder/edit?id={order_id}">'
+            f"{html.escape(order_id)}</a>. Код: {html.escape(code)}"
+        )
+        await self._bot().send_message(self.help_chat_id, message, disable_web_page_preview=True)
 
 
 telegram_sender = Sender()

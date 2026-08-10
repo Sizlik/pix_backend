@@ -64,12 +64,14 @@ class OrderChatService:
         access_policy: OrderChatAccessPolicy,
         attachment_max_count: int,
         attachment_max_bytes: int,
+        realtime=None,
     ):
         self._repository = repository
         self._storage = storage
         self._access_policy = access_policy
         self._attachment_max_count = attachment_max_count
         self._attachment_max_bytes = attachment_max_bytes
+        self._realtime = realtime
 
     async def list_messages(
         self,
@@ -157,7 +159,13 @@ class OrderChatService:
             for key in stored_keys:
                 await self._storage.delete(key)
             raise
-        return await self._response(stored)
+        response = await self._response(stored)
+        if self._realtime is not None:
+            try:
+                await self._realtime.publish(str(order_id), response.model_dump(mode="json"))
+            except Exception:
+                pass
+        return response
 
     async def get_attachment(self, user, attachment_id: UUID) -> DownloadedAttachment:
         record = await self._repository.get_attachment_for_client(attachment_id)

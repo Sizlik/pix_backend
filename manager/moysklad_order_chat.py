@@ -33,12 +33,14 @@ class MoySkladOrderChatSynchronizer:
         storage,
         attachment_max_count: int = 10,
         attachment_max_bytes: int = 20 * 1024 * 1024,
+        realtime=None,
     ):
         self._repository = repository
         self._moysklad = moysklad
         self._storage = storage
         self._attachment_max_count = attachment_max_count
         self._attachment_max_bytes = attachment_max_bytes
+        self._realtime = realtime
 
     async def process_moysklad_update(self, event) -> None:
         order_id = event.order_id
@@ -131,7 +133,7 @@ class MoySkladOrderChatSynchronizer:
                         origin_external_file_id=source.id,
                     )
                 )
-            await self._repository.create_manager_message_with_notification(
+            message = await self._repository.create_manager_message_with_notification(
                 message_id=message_id,
                 order_id=order_id,
                 client_id=client.id,
@@ -164,7 +166,33 @@ class MoySkladOrderChatSynchronizer:
             for key in stored_keys:
                 await self._storage.delete(key)
             raise
+        if self._realtime is not None:
+            try:
+                await self._realtime.publish(str(order_id), self._message_payload(message))
+            except Exception:
+                pass
         await self.sync_order(order_id)
+
+    @staticmethod
+    def _message_payload(message) -> dict:
+        return {
+            "id": str(message.id),
+            "order_id": str(message.order_id),
+            "sender_kind": "manager",
+            "sender_label": "Менеджер Pix Logistic",
+            "message": message.body,
+            "created_at": message.created_at.isoformat(),
+            "attachments": [
+                {
+                    "id": str(item.id),
+                    "filename": item.original_filename,
+                    "mime_type": item.mime_type,
+                    "size_bytes": item.size_bytes,
+                }
+                for item in message.attachments
+            ],
+            "delivery_state": "synced",
+        }
 
     @staticmethod
     def _owned_by_client(order, client) -> bool:

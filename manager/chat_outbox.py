@@ -13,12 +13,14 @@ class OrderChatOutboxWorker:
         handlers: dict[str, Callable],
         max_attempts: int,
         base_delay_seconds: int,
+        realtime=None,
     ):
         self._repository = repository
         self._order_lock = order_lock
         self._handlers = handlers
         self._max_attempts = max_attempts
         self._base_delay_seconds = base_delay_seconds
+        self._realtime = realtime
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -51,7 +53,7 @@ class OrderChatOutboxWorker:
                 return True
             handler = self._handlers.get(event.event_type)
             if handler is None:
-                await self._repository.retry_event(
+                status = await self._repository.retry_event(
                     event,
                     RuntimeError("Unknown event type"),
                     max_attempts=0,
@@ -63,15 +65,33 @@ class OrderChatOutboxWorker:
                 if inspect.isawaitable(result):
                     await result
             except Exception as error:
-                await self._repository.retry_event(
+                status = await self._repository.retry_event(
                     event,
                     error,
                     self._max_attempts,
                     self._base_delay_seconds,
                 )
+                if status == "dead":
+                    await self._publish_delivery(event, "failed")
             else:
                 await self._repository.complete_event(event.id)
+                await self._publish_delivery(event, "synced")
         return True
+
+    async def _publish_delivery(self, event, state: str) -> None:
+        if self._realtime is None or event.event_type != "sync_order" or not event.payload.get("message_id"):
+            return
+        try:
+            await self._realtime.publish(
+                str(event.order_id),
+                {
+                    "type": "order_chat_delivery",
+                    "message_id": event.payload["message_id"],
+                    "delivery_state": state,
+                },
+            )
+        except Exception:
+            pass
 
     async def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -101,4 +121,23 @@ class OrderChatTelegramHandlers:
             client_number=int(event.payload.get("client_number", 0)),
             text=message.body,
             filenames=[attachment.original_filename for attachment in message.attachments],
+        )
+
+    async def manager_alert(self, event) -> None:
+        message = await self._repository.get_message(UUID(event.payload["message_id"]))
+        client = await self._repository.get_state_client(event.order_id)
+        if message is None or client is None or not client.telegram_id:
+            return
+        await self._sender.send_order_manager_alert(
+            client.telegram_id,
+            order_id=str(event.order_id),
+            order_name=str(event.payload.get("order_name", event.order_id)),
+            text=message.body,
+            filenames=[item.original_filename for item in message.attachments],
+        )
+
+    async def projection_error(self, event) -> None:
+        await self._sender.send_order_projection_error(
+            order_id=str(event.order_id),
+            code=str(event.payload.get("code", "projection_error")),
         )

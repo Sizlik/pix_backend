@@ -7,6 +7,7 @@ from db.moysklad_order_chat_repository import (
     MoySkladOrderChatRepository,
 )
 from db.order_chat_repository import OrderChatRepository
+from dependecies.chat import get_chat_realtime
 from manager.chat_outbox import (
     OrderChatOutboxWorker,
     OrderChatTelegramHandlers,
@@ -38,11 +39,17 @@ def get_order_chat_service() -> OrderChatService:
         access_policy=OrderChatAccessPolicy(moysklad),
         attachment_max_count=chat_settings.attachment_max_count,
         attachment_max_bytes=chat_settings.attachment_max_bytes,
+        realtime=get_chat_realtime(),
     )
 
 
 def get_order_chat_repository() -> OrderChatRepository:
     return OrderChatRepository()
+
+
+def get_order_chat_access_policy() -> OrderChatAccessPolicy:
+    settings = get_settings()
+    return OrderChatAccessPolicy(MoySkladOrderChatRepository(settings))
 
 
 def get_order_chat_webhook_receiver():
@@ -61,7 +68,7 @@ class OrderChatRuntime:
     worker: OrderChatOutboxWorker
 
 
-def get_order_chat_runtime(settings: Settings) -> OrderChatRuntime:
+def get_order_chat_runtime(settings: Settings, realtime=None) -> OrderChatRuntime:
     chat_settings = settings.require_order_chat()
     storage = MinioObjectStorage(
         endpoint=chat_settings.endpoint,
@@ -72,12 +79,14 @@ def get_order_chat_runtime(settings: Settings) -> OrderChatRuntime:
     )
     repository = OrderChatRepository()
     moysklad = MoySkladOrderChatRepository(settings)
+    realtime = realtime or get_chat_realtime()
     synchronizer = MoySkladOrderChatSynchronizer(
         repository=repository,
         moysklad=moysklad,
         storage=storage,
         attachment_max_count=chat_settings.attachment_max_count,
         attachment_max_bytes=chat_settings.attachment_max_bytes,
+        realtime=realtime,
     )
     telegram_handlers = OrderChatTelegramHandlers(repository, telegram_sender)
     worker = OrderChatOutboxWorker(
@@ -87,8 +96,11 @@ def get_order_chat_runtime(settings: Settings) -> OrderChatRuntime:
             "sync_order": lambda event: synchronizer.sync_order(event.order_id),
             "telegram_client_alert": telegram_handlers.client_alert,
             "process_moysklad_update": synchronizer.process_moysklad_update,
+            "telegram_manager_alert": telegram_handlers.manager_alert,
+            "telegram_projection_error": telegram_handlers.projection_error,
         },
         max_attempts=chat_settings.outbox_max_attempts,
         base_delay_seconds=chat_settings.outbox_base_delay_seconds,
+        realtime=realtime,
     )
     return OrderChatRuntime(storage=storage, worker=worker)
