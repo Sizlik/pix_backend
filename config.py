@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import quote_plus
@@ -10,6 +11,20 @@ from errors import IntegrationNotConfigured
 LOCAL_POSTGRES_PASSWORD = "pix_local"
 LOCAL_VERIFICATION_SECRET = "local-verification-secret"
 LOCAL_RESET_SECRET = "local-reset-secret"
+
+
+@dataclass(frozen=True, slots=True)
+class OrderChatSettings:
+    endpoint: str
+    access_key: str
+    secret_key: str
+    bucket: str
+    secure: bool
+    webhook_secret: str
+    attachment_max_bytes: int
+    attachment_max_count: int
+    outbox_max_attempts: int
+    outbox_base_delay_seconds: int
 
 
 class Settings(BaseSettings):
@@ -33,6 +48,7 @@ class Settings(BaseSettings):
     reset_password_token_secret: SecretStr = SecretStr(LOCAL_RESET_SECRET)
     cors_origins: list[str] = ["http://localhost:3000"]
     enable_scheduler: bool = False
+    enable_moysklad_order_chat: bool = False
 
     bot_token: SecretStr | None = None
     chat_id: int | None = None
@@ -49,6 +65,16 @@ class Settings(BaseSettings):
     privoz_username: str | None = None
     privoz_password: SecretStr | None = None
     mailersend_token: SecretStr | None = None
+    moysklad_order_chat_webhook_secret: SecretStr | None = None
+    minio_endpoint: str | None = None
+    minio_access_key: str | None = None
+    minio_secret_key: SecretStr | None = None
+    minio_bucket: str = "pix-order-chat"
+    minio_secure: bool = False
+    chat_attachment_max_bytes: int = Field(20 * 1024 * 1024, gt=0)
+    chat_attachment_max_count: int = Field(10, gt=0)
+    chat_outbox_max_attempts: int = Field(8, gt=0)
+    chat_outbox_base_delay_seconds: int = Field(5, gt=0)
 
     @field_validator("chat_id", "help_chat_id", mode="before")
     @classmethod
@@ -61,6 +87,29 @@ class Settings(BaseSettings):
         return (
             f"{self.postgres_driver}://{self.postgres_user}:{password}"
             f"@{self.postgres_host}:{self.db_port}/{self.postgres_db}"
+        )
+
+    def require_order_chat(self) -> OrderChatSettings:
+        if not self.enable_moysklad_order_chat:
+            raise IntegrationNotConfigured("moysklad order chat")
+        endpoint = require_value(self.minio_endpoint, "moysklad order chat")
+        access_key = require_value(self.minio_access_key, "moysklad order chat")
+        secret_key = require_secret(self.minio_secret_key, "moysklad order chat")
+        webhook_secret = require_secret(
+            self.moysklad_order_chat_webhook_secret,
+            "moysklad order chat",
+        )
+        return OrderChatSettings(
+            endpoint=endpoint,
+            access_key=access_key,
+            secret_key=secret_key,
+            bucket=self.minio_bucket,
+            secure=self.minio_secure,
+            webhook_secret=webhook_secret,
+            attachment_max_bytes=self.chat_attachment_max_bytes,
+            attachment_max_count=self.chat_attachment_max_count,
+            outbox_max_attempts=self.chat_outbox_max_attempts,
+            outbox_base_delay_seconds=self.chat_outbox_base_delay_seconds,
         )
 
     @model_validator(mode="after")
