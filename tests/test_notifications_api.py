@@ -20,9 +20,10 @@ NOTIFICATION_ID = UUID("00000000-0000-0000-0000-000000000010")
 
 
 class StubNotificationManager:
-    def __init__(self, count=4):
+    def __init__(self, count=4, realtime=None):
         self.count = count
         self.calls = []
+        self.realtime = realtime
 
     async def unread_count(self, user_id):
         self.calls.append(("count", user_id))
@@ -32,10 +33,16 @@ class StubNotificationManager:
         self.calls.append(("create", notification))
         return NOTIFICATION_ID
 
-    async def send_current_count(self, user_id, send):
-        self.calls.append(("send-count", user_id))
-        await send({"type": "notification_count", "unread_count": self.count})
-        return self.count
+    async def notify_count_changed(self, user_id):
+        self.calls.append(("notify-count", user_id))
+        await self.realtime.publish(
+            str(user_id),
+            {
+                "type": "notification_count",
+                "unread_count": self.count,
+                "version": 1,
+            },
+        )
 
     async def read_notification(self, user_id, notification_id):
         self.calls.append(("read-one", user_id, notification_id))
@@ -50,13 +57,18 @@ class StubRealtime:
     def __init__(self):
         self.connected_user_ids = []
         self.disconnected_user_ids = []
+        self.connections = {}
 
     async def connect(self, user_id, websocket):
         self.connected_user_ids.append(str(user_id))
         await websocket.accept()
+        self.connections[str(user_id)] = websocket
 
     async def disconnect(self, user_id, websocket):
         self.disconnected_user_ids.append(str(user_id))
+
+    async def publish(self, user_id, payload):
+        await self.connections[str(user_id)].send_json(payload)
 
 
 class StubStrategy:
@@ -80,8 +92,8 @@ def notification_app(manager, *, authenticated=True):
 
 
 def websocket_app(*, valid_user, count):
-    manager = StubNotificationManager(count=count)
     realtime = StubRealtime()
+    manager = StubNotificationManager(count=count, realtime=realtime)
     app = notification_app(manager)
     app.dependency_overrides[get_notification_realtime] = lambda: realtime
     app.dependency_overrides[get_redis_strategy] = lambda: StubStrategy(valid_user)
@@ -157,6 +169,7 @@ def test_notification_websocket_sends_initial_authoritative_count():
             assert websocket.receive_json() == {
                 "type": "notification_count",
                 "unread_count": 7,
+                "version": 1,
             }
 
     assert realtime.connected_user_ids == [str(USER_ID)]

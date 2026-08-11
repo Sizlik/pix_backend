@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from db.schemas.notifications import NotificationCountEvent, NotificationCreate
+from manager.notification_realtime import NotificationCountLockUnavailable
 
 
 class NotificationManager:
@@ -27,14 +28,30 @@ class NotificationManager:
             yield
 
     async def unread_count(self, user_id) -> int:
-        async with self._count_lock(user_id):
+        try:
+            async with self._count_lock(user_id):
+                return await self._repo.count_unread(user_id)
+        except NotificationCountLockUnavailable:
             return await self._repo.count_unread(user_id)
 
     async def _publish_value(self, user_id, count: int) -> None:
         if self._realtime is None:
             return
         try:
-            payload = NotificationCountEvent(unread_count=count).model_dump()
+            version_factory = getattr(
+                self._realtime,
+                "next_count_version",
+                None,
+            )
+            version = (
+                await version_factory(str(user_id))
+                if version_factory is not None
+                else None
+            )
+            payload = NotificationCountEvent(
+                unread_count=count,
+                version=version,
+            ).model_dump(exclude_none=True)
             await self._realtime.publish(str(user_id), payload)
         except Exception:
             return
@@ -46,17 +63,13 @@ class NotificationManager:
             return
 
     async def _count_and_publish(self, user_id) -> int:
-        async with self._count_lock(user_id):
-            count = await self._repo.count_unread(user_id)
-            await self._publish_value(user_id, count)
-            return count
-
-    async def send_current_count(self, user_id, send) -> int:
-        async with self._count_lock(user_id):
-            count = await self._repo.count_unread(user_id)
-            payload = NotificationCountEvent(unread_count=count).model_dump()
-            await send(payload)
-            return count
+        try:
+            async with self._count_lock(user_id):
+                count = await self._repo.count_unread(user_id)
+                await self._publish_value(user_id, count)
+                return count
+        except NotificationCountLockUnavailable:
+            return await self._repo.count_unread(user_id)
 
     async def read_notification(self, user_id, notification_id) -> int:
         await self._repo.mark_read(notification_id, user_id)

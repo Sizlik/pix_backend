@@ -132,7 +132,7 @@ async def notification_websocket(
     user_id = str(user.id)
     await realtime.connect(user_id, websocket)
     try:
-        await notification_manager.send_current_count(user.id, websocket.send_json)
+        await notification_manager.notify_count_changed(user.id)
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:

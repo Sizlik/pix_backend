@@ -22,4 +22,5 @@ class NotificationCountResponse(BaseModel):
 
 class NotificationCountEvent(NotificationCountResponse):
     type: Literal["notification_count"] = "notification_count"
+    version: int | None = Field(default=None, ge=1)
 
