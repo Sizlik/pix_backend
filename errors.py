@@ -4,6 +4,13 @@ class IntegrationNotConfigured(RuntimeError):
         super().__init__(f"{integration} is not configured")
 
 
+class MoySkladDocumentExportError(RuntimeError):
+    def __init__(self, reason: str, status_code: int | None = None) -> None:
+        self.reason = reason
+        self.status_code = status_code
+        super().__init__("MoySklad document export failed")
+
+
 class LinkPreviewValidationError(ValueError):
     def __init__(self) -> None:
         super().__init__("URL is not allowed")

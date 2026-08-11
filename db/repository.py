@@ -1,4 +1,5 @@
 import base64
+import logging
 from abc import ABC, abstractmethod
 from uuid import UUID
 
@@ -8,6 +9,10 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 
 from config import Settings, get_settings, require_secret, require_value
 from db.postgres import async_session_maker
+from errors import MoySkladDocumentExportError
+
+
+logger = logging.getLogger(__name__)
 
 
 class AbstractRepository(ABC):
@@ -44,7 +49,13 @@ class AbstractRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def export(self, **kwargs):
+    async def export_document(
+        self,
+        document_id: str,
+        *,
+        template: dict,
+        extension: str,
+    ) -> bytes:
         raise NotImplementedError
 
 
@@ -137,10 +148,53 @@ class MoySkladRepository(AbstractRepository):
     async def upsert(self, **kwargs):
         pass
 
-    async def export(self, **kwargs):
-        return requests.post(
-            self.base_url + self.model + "/" + kwargs.get("link", ""), headers=self._headers(), json=kwargs
-        ).content
+    async def export_document(
+        self,
+        document_id: str,
+        *,
+        template: dict,
+        extension: str,
+    ) -> bytes:
+        try:
+            response = requests.post(
+                f"{self.base_url}{self.model}/{document_id}/export",
+                headers=self._headers(),
+                json={"template": template, "extension": extension},
+                allow_redirects=True,
+                timeout=(5, 30),
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            logger.warning(
+                "MoySklad document export request failed model=%s document_id=%s status=%s",
+                self.model,
+                document_id,
+                status_code,
+            )
+            raise MoySkladDocumentExportError("request_failed", status_code) from exc
+
+        if response.status_code != 200:
+            logger.warning(
+                "MoySklad document export returned a non-final status "
+                "model=%s document_id=%s status=%s",
+                self.model,
+                document_id,
+                response.status_code,
+            )
+            raise MoySkladDocumentExportError("unexpected_status", response.status_code)
+
+        if not response.content.startswith(b"%PDF-"):
+            logger.warning(
+                "MoySklad document export returned invalid PDF content "
+                "model=%s document_id=%s status=%s",
+                self.model,
+                document_id,
+                response.status_code,
+            )
+            raise MoySkladDocumentExportError("invalid_pdf", response.status_code)
+
+        return response.content
 
 
 class SQLAlchemyRepository(AbstractRepository):
@@ -205,5 +259,11 @@ class SQLAlchemyRepository(AbstractRepository):
     async def delete(self, id, **kwargs):
         pass
 
-    async def export(self, kwargs):
-        pass
+    async def export_document(
+        self,
+        document_id: str,
+        *,
+        template: dict,
+        extension: str,
+    ) -> bytes:
+        raise NotImplementedError
