@@ -81,6 +81,13 @@ class SerializedRecordingRealtime(RecordingRealtime):
             yield
 
 
+class TimedOutRealtime(RecordingRealtime):
+    @asynccontextmanager
+    async def count_lock(self, user_id):
+        raise TimeoutError
+        yield
+
+
 class BlockingCountRepository(MemoryNotificationRepository):
     def __init__(self):
         super().__init__()
@@ -185,3 +192,15 @@ async def test_concurrent_count_publications_are_serialized_per_user():
     await asyncio.gather(first, second)
 
     assert [event[1]["unread_count"] for event in realtime.events] == [1, 0]
+
+
+async def test_read_returns_fresh_count_when_realtime_lock_times_out():
+    repository = MemoryNotificationRepository()
+    realtime = TimedOutRealtime()
+    manager = NotificationManager(repository, realtime)
+
+    count = await manager.read_notification(USER_ID, NOTIFICATION_ID)
+
+    assert count == 0
+    assert repository.rows[NOTIFICATION_ID].is_readed is True
+    assert realtime.events == []

@@ -31,7 +31,7 @@ class NotificationManager:
         try:
             async with self._count_lock(user_id):
                 return await self._repo.count_unread(user_id)
-        except NotificationCountLockUnavailable:
+        except (NotificationCountLockUnavailable, TimeoutError):
             return await self._repo.count_unread(user_id)
 
     async def _publish_value(self, user_id, count: int) -> None:
@@ -68,7 +68,7 @@ class NotificationManager:
                 count = await self._repo.count_unread(user_id)
                 await self._publish_value(user_id, count)
                 return count
-        except NotificationCountLockUnavailable:
+        except (NotificationCountLockUnavailable, TimeoutError):
             return await self._repo.count_unread(user_id)
 
     async def read_notification(self, user_id, notification_id) -> int:
