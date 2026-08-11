@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -66,6 +68,33 @@ class RecordingRealtime:
         if self.error:
             raise self.error
         self.events.append((str(user_id), payload))
+
+
+class SerializedRecordingRealtime(RecordingRealtime):
+    def __init__(self):
+        super().__init__()
+        self._count_lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def count_lock(self, user_id):
+        async with self._count_lock:
+            yield
+
+
+class BlockingCountRepository(MemoryNotificationRepository):
+    def __init__(self):
+        super().__init__()
+        self.count_calls = 0
+        self.first_count_started = asyncio.Event()
+        self.release_first_count = asyncio.Event()
+
+    async def count_unread(self, user_id):
+        self.count_calls += 1
+        if self.count_calls == 1:
+            self.first_count_started.set()
+            await self.release_first_count.wait()
+            return 1
+        return 0
 
 
 async def test_read_one_cannot_change_another_users_notification():
@@ -141,3 +170,18 @@ async def test_list_and_count_are_scoped_to_requested_user():
 
     assert [row.id for row in rows] == [NOTIFICATION_ID]
     assert await manager.unread_count(USER_ID) == 1
+
+
+async def test_concurrent_count_publications_are_serialized_per_user():
+    repository = BlockingCountRepository()
+    realtime = SerializedRecordingRealtime()
+    manager = NotificationManager(repository, realtime)
+
+    first = asyncio.create_task(manager.notify_count_changed(USER_ID))
+    await repository.first_count_started.wait()
+    second = asyncio.create_task(manager.notify_count_changed(USER_ID))
+    await asyncio.sleep(0)
+    repository.release_first_count.set()
+    await asyncio.gather(first, second)
+
+    assert [event[1]["unread_count"] for event in realtime.events] == [1, 0]

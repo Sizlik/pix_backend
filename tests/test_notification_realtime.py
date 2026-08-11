@@ -7,9 +7,30 @@ from manager.notification_realtime import NotificationRealtime
 class FakeRedis:
     def __init__(self):
         self.published = []
+        self.locks = []
 
     async def publish(self, channel, payload):
         self.published.append((channel, payload))
+
+    def lock(self, name, **options):
+        lock = FakeLock(name, options)
+        self.locks.append(lock)
+        return lock
+
+
+class FakeLock:
+    def __init__(self, name, options):
+        self.name = name
+        self.options = options
+        self.acquired = False
+        self.released = False
+
+    async def acquire(self):
+        self.acquired = True
+        return True
+
+    async def release(self):
+        self.released = True
 
 
 class RecordingHub:
@@ -64,3 +85,16 @@ async def test_notification_hub_updates_all_live_tabs_and_drops_dead_one():
     assert first.messages == [event]
     assert second.messages == [event]
     assert dead not in hub.connections["user-1"]
+
+
+async def test_notification_count_lock_is_scoped_to_one_user():
+    redis = FakeRedis()
+    bridge = NotificationRealtime(redis, RecordingHub())
+
+    async with bridge.count_lock("user-1"):
+        assert redis.locks[-1].acquired is True
+
+    lock = redis.locks[-1]
+    assert lock.name == "notifications:count-lock:user-1"
+    assert lock.options == {"timeout": 10, "blocking_timeout": 5}
+    assert lock.released is True

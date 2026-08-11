@@ -28,6 +28,15 @@ class StubNotificationManager:
         self.calls.append(("count", user_id))
         return self.count
 
+    async def create_notification(self, notification):
+        self.calls.append(("create", notification))
+        return NOTIFICATION_ID
+
+    async def send_current_count(self, user_id, send):
+        self.calls.append(("send-count", user_id))
+        await send({"type": "notification_count", "unread_count": self.count})
+        return self.count
+
     async def read_notification(self, user_id, notification_id):
         self.calls.append(("read-one", user_id, notification_id))
         return 3
@@ -96,6 +105,30 @@ def test_count_and_read_routes_pass_only_current_user_id():
         ("read-one", USER_ID, NOTIFICATION_ID),
         ("read-all", USER_ID),
     ]
+
+
+def test_create_route_requires_authentication_and_forces_current_user():
+    payload = {
+        "user_id": str(UUID("00000000-0000-0000-0000-000000000099")),
+        "type": "MESSAGE",
+        "object_id": str(NOTIFICATION_ID),
+    }
+    manager = StubNotificationManager()
+    with TestClient(notification_app(manager)) as client:
+        response = client.post("/api_v1/notifications/", json=payload)
+
+    assert response.status_code == 200
+    assert response.json() == str(NOTIFICATION_ID)
+    operation, notification = manager.calls[-1]
+    assert operation == "create"
+    assert notification.user_id == str(USER_ID)
+
+    with TestClient(
+        notification_app(StubNotificationManager(), authenticated=False)
+    ) as client:
+        unauthenticated = client.post("/api_v1/notifications/", json=payload)
+
+    assert unauthenticated.status_code == 401
 
 
 @pytest.mark.parametrize(

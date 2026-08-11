@@ -7,7 +7,6 @@ from db.models.users import User
 from db.order_chat_repository import OrderChatRepository
 from db.redis import get_redis_strategy
 from db.schemas.notifications import (
-    NotificationCountEvent,
     NotificationCountResponse,
     NotificationCreate,
     NotificationTypes,
@@ -31,9 +30,12 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 @router.post("/")
 async def create_notification(
-    notification: NotificationCreate, notification_manager: NotificationManager = Depends(get_notification_manager)
+    notification: NotificationCreate,
+    user: User = Depends(current_user_dependency),
+    notification_manager: NotificationManager = Depends(get_notification_manager),
 ):
-    return await notification_manager.create_notification(notification)
+    user_notification = notification.model_copy(update={"user_id": str(user.id)})
+    return await notification_manager.create_notification(user_notification)
 
 
 @router.get("/")
@@ -130,9 +132,7 @@ async def notification_websocket(
     user_id = str(user.id)
     await realtime.connect(user_id, websocket)
     try:
-        count = await notification_manager.unread_count(user.id)
-        event = NotificationCountEvent(unread_count=count)
-        await websocket.send_json(event.model_dump())
+        await notification_manager.send_current_count(user.id, websocket.send_json)
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
