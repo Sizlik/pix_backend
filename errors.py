@@ -33,3 +33,15 @@ class AddressNotFound(LookupError):
 
 class AddressNameConflict(ValueError):
     pass
+
+
+class IdempotencyKeyReused(RuntimeError):
+    pass
+
+
+class OrderCreationInProgress(RuntimeError):
+    pass
+
+
+class OrderCreationIdempotencyUnavailable(RuntimeError):
+    pass

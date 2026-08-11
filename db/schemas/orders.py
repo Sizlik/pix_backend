@@ -26,8 +26,23 @@ class OrderCreate(OrderBase):
     pass
 
 
-class CheckoutOrderCreate(OrderBase):
+class CheckoutOrderItemCreate(BaseModel):
+    comment: str = ""
+    count: int = Field(gt=0)
+    link: str = Field(min_length=1)
+
+    @field_validator("link")
+    @classmethod
+    def strip_and_require_link(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("link must not be blank")
+        return value
+
+
+class CheckoutOrderCreate(BaseModel):
     address_id: UUID
+    order_items: list[CheckoutOrderItemCreate] = Field(min_length=1)
 
 
 class OrderRead(OrderBase):

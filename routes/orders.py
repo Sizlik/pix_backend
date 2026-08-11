@@ -3,7 +3,7 @@ import uuid
 from typing import Annotated
 
 import pandas as pd
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Response
+from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Response
 
 from bot.sender import telegram_sender
 from db.models.users import User
@@ -23,7 +23,10 @@ from dependecies import (
     privoz_orders as dependency_privoz,
 )
 from errors import (
+    IdempotencyKeyReused,
     InvalidOrderChanges,
+    OrderCreationIdempotencyUnavailable,
+    OrderCreationInProgress,
     OrderNotAccessible,
     OrderNotEditable,
     OrderVersionConflict,
@@ -40,6 +43,32 @@ from manager.privoz_order import PrivozManager
 from routes.users import current_user_dependency
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
+
+def order_creation_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, IdempotencyKeyReused):
+        return HTTPException(
+            409,
+            detail={
+                "code": "idempotency_key_reused",
+                "message": "Idempotency key was already used for another order",
+            },
+        )
+    if isinstance(exc, OrderCreationInProgress):
+        return HTTPException(
+            409,
+            detail={
+                "code": "order_creation_in_progress",
+                "message": "Order creation is still in progress",
+            },
+        )
+    return HTTPException(
+        503,
+        detail={
+            "code": "order_idempotency_unavailable",
+            "message": "Order creation is temporarily unavailable",
+        },
+    )
 
 
 def order_change_http_error(exc: Exception) -> HTTPException:
@@ -67,12 +96,20 @@ def order_change_http_error(exc: Exception) -> HTTPException:
 @router.post("")
 async def create_order(
     order: CheckoutOrderCreate,
+    idempotency_key: Annotated[uuid.UUID, Header(alias="Idempotency-Key")],
     user: User = Depends(current_user_dependency),
     manager: OrderCreationManager = Depends(
         dependency_orders.get_order_creation_manager
     ),
 ):
-    return await manager.create(order, user)
+    try:
+        return await manager.create(order, user, idempotency_key)
+    except (
+        IdempotencyKeyReused,
+        OrderCreationInProgress,
+        OrderCreationIdempotencyUnavailable,
+    ) as exc:
+        raise order_creation_http_error(exc) from None
 
 
 @router.get("/export/{id}")
