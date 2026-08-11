@@ -1,3 +1,4 @@
+import logging
 import random
 import uuid
 from typing import Optional
@@ -14,6 +15,8 @@ from db.redis import redis
 from db.schemas import moysklad as schemas_moysklad
 from db.schemas.users import UserUpdate
 from dependecies import moysklad
+
+logger = logging.getLogger(__name__)
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
@@ -56,15 +59,31 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             email=user.email,
             phone=user.phone_number,
         )
-        moysklad_counterparty = await counterparty_manager.create_user_counterparty(counterparty_data)
-        user_update_data = UserUpdate(
-            moysklad_counterparty_id=moysklad_counterparty.get("id"),
-            moysklad_counterparty_meta=moysklad_counterparty.get("meta"),
+        resolution = await counterparty_manager.resolve_user_counterparty(
+            counterparty_data
         )
-        await telegram_sender.send_group_message(
-            f'<a href="{moysklad_counterparty.get("meta").get("uuidHref")}">Новый пользователь на сайте!</a>\n{user.first_name} Клиент #{user.name_id}'
+        counterparty = resolution.counterparty
+        user_update_data = UserUpdate(
+            moysklad_counterparty_id=counterparty["id"],
+            moysklad_counterparty_meta=counterparty["meta"],
         )
         await self.update(user_update_data, user, request=request)
+
+        notification_title = (
+            "Новый пользователь на сайте!"
+            if resolution.created
+            else "Пользователь связан с существующим контрагентом!"
+        )
+        try:
+            await telegram_sender.send_group_message(
+                f'<a href="{counterparty["meta"]["uuidHref"]}">'
+                f"{notification_title}</a>\n"
+                f"{user.first_name} Клиент #{user.name_id}"
+            )
+        except Exception:
+            logger.exception(
+                "Failed to send MoySklad user verification notification"
+            )
 
     async def on_after_register(self, user: models.UP, request: Optional[Request] = None) -> None:
         await self.request_verify(user, request)

@@ -97,6 +97,13 @@ External calls currently use synchronous `requests` in async request paths. They
 
 The JWT login endpoint stores bearer-token state through the Redis strategy. Protected REST routes resolve `current_user_dependency`. Verification/reset handlers store short-lived code-to-token mappings in Redis before sending email.
 
+After email verification, an unlinked user searches MoySklad counterparties by
+common exact representations of the normalized phone number. The backend
+normalizes returned candidates again: one match is linked without modifying the
+counterparty, while zero or multiple matches create a new counterparty. Lookup
+errors never fall back to creation. The local `id` and `meta` are persisted
+before the Telegram side notification is attempted.
+
 Checkout `POST /api_v1/orders` requires `address_id`. The backend resolves the address with both its ID and the authenticated user ID before any external request, creates an immutable address snapshot, and copies it into the MoySklad customer order as `shipmentAddress` and `shipmentAddressFull`. `shipmentAddressFull.comment` remains reserved for the existing Privoz `#` marker; the courier note is written to `addInfo`. The address becomes the default only when MoySklad order creation succeeds and `last_used_at` is updated. Address preference and Telegram notification failures do not turn an already-created external order into a retryable checkout failure.
 
 The frontend reuses one address-book component for checkout and `/dashboard/addresses`. It supports create, edit, delete, case-insensitive title search, explicit selection, server-derived default selection, and a guarded single-submit checkout flow that preserves the cart on failure.
