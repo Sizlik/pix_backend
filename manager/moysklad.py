@@ -227,6 +227,17 @@ class ProductManager:
         return await self.__repo.create_multiply(products)
 
 
+def enrich_order_currency(order: dict) -> dict:
+    rate = order.get("rate")
+    currency = rate.get("currency") if isinstance(rate, dict) else None
+    iso_code = currency.get("isoCode") if isinstance(currency, dict) else None
+    if isinstance(iso_code, str) and iso_code.strip():
+        order["currency_code"] = iso_code.strip().upper()
+    else:
+        order.pop("currency_code", None)
+    return order
+
+
 class CustomerOrderManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
@@ -307,12 +318,22 @@ class CustomerOrderManager:
         return await self.__repo.create(**customer_order)
 
     async def get_order_by_id(self, id):
-        return await self.__repo.read_one(id, link="expand=positions.assortment,state")
+        order = await self.__repo.read_one(
+            id,
+            link="expand=positions.assortment,state,rate.currency",
+        )
+        return enrich_order_currency(order)
 
     async def get_orders_by_user(self, user: User):
-        return await self.__repo.read_all(
-            f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}&expand=state&limit=100&order=created,desc"
+        result = await self.__repo.read_all(
+            f"agent=https://api.moysklad.ru/api/remap/1.2/entity/counterparty/{user.moysklad_counterparty_id}&expand=state,rate.currency&limit=100&order=created,desc"
         )
+        rows = result.get("rows")
+        if isinstance(rows, list):
+            for order in rows:
+                if isinstance(order, dict):
+                    enrich_order_currency(order)
+        return result
 
     async def delete_order_position_by_id(self, order_id, position_id):
         return await self.__repo.delete(order_id, link=f"/positions/{position_id}")
