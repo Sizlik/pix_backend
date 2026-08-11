@@ -17,4 +17,5 @@ class ProductCreate(BaseModel):
     name: str
     description: str
     productFolder: dict | None = None
+    syncId: str | None = None
 

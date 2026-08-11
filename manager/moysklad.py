@@ -1,4 +1,6 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
+from uuid import UUID
 
 import requests
 
@@ -6,7 +8,7 @@ from db.models.orders import OrderItems
 from db.models.users import User
 from db.repository import AbstractRepository, MoySkladRepository
 from db.schemas import moysklad
-from db.schemas.orders import OrderCreate
+from db.schemas.orders import CheckoutOrderCreate, OrderCreate
 from manager.addresses import DeliveryAddressSnapshot
 from manager.phone_numbers import normalize_phone, phone_search_variants
 
@@ -214,13 +216,21 @@ class ProductManager:
 
         return await self.__repo.create_multiply(products)
 
-    async def create_products(self, order: OrderCreate, user: User):
+    async def create_products(
+        self,
+        order: OrderCreate | CheckoutOrderCreate,
+        user: User,
+        sync_ids: Sequence[UUID] | None = None,
+    ):
+        if sync_ids is not None and len(sync_ids) != len(order.order_items):
+            raise ValueError("one sync id is required per product")
         products = []
-        for item in order.order_items:
+        for index, item in enumerate(order.order_items):
             product = moysklad.ProductCreate(
                 name=f"{item.link}",
                 description=f"{item.comment}",
-            ).model_dump()
+                syncId=str(sync_ids[index]) if sync_ids is not None else None,
+            ).model_dump(exclude_none=True)
 
             products.append(product)
 
@@ -302,6 +312,8 @@ class CustomerOrderManager:
         order_items,
         user: User,
         delivery_address: DeliveryAddressSnapshot,
+        *,
+        sync_id: UUID,
     ):
         organization = await self.__repo.get_default_company()
         positions = []
@@ -310,6 +322,7 @@ class CustomerOrderManager:
             positions.append(position)
 
         customer_order = {
+            "syncId": str(sync_id),
             "organization": {"meta": organization.get("meta")},
             "agent": {"meta": user.moysklad_counterparty_meta},
             "positions": positions,

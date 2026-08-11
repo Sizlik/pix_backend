@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 
@@ -15,6 +16,7 @@ SNAPSHOT = DeliveryAddressSnapshot(
     apartment="15",
     delivery_comment="Позвонить за 10 минут",
 )
+ORDER_SYNC_ID = UUID("00000000-0000-0000-0000-000000000030")
 
 
 def test_moysklad_payload_is_structured_and_preserves_privoz_comment():
@@ -56,6 +58,7 @@ async def test_customer_order_creation_copies_delivery_snapshot_into_order():
         [{"count": 2, "moysklad_product_meta": {"href": "product"}}],
         user,
         SNAPSHOT,
+        sync_id=ORDER_SYNC_ID,
     )
 
     assert repository.created["shipmentAddressFull"]["addInfo"] == (
@@ -65,3 +68,4 @@ async def test_customer_order_creation_copies_delivery_snapshot_into_order():
     assert repository.created["agent"] == {
         "meta": {"href": "counterparty"}
     }
+    assert repository.created["syncId"] == str(ORDER_SYNC_ID)
