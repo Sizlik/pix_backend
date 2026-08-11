@@ -104,7 +104,17 @@ counterparty, while zero or multiple matches create a new counterparty. Lookup
 errors never fall back to creation. The local `id` and `meta` are persisted
 before the Telegram side notification is attempted.
 
-Checkout `POST /api_v1/orders` requires `address_id`. The backend resolves the address with both its ID and the authenticated user ID before any external request, creates an immutable address snapshot, and copies it into the MoySklad customer order as `shipmentAddress` and `shipmentAddressFull`. `shipmentAddressFull.comment` remains reserved for the existing Privoz `#` marker; the courier note is written to `addInfo`. The address becomes the default only when MoySklad order creation succeeds and `last_used_at` is updated. Address preference and Telegram notification failures do not turn an already-created external order into a retryable checkout failure.
+Checkout `POST /api_v1/orders` requires `address_id`, at least one valid item,
+and a UUID `Idempotency-Key`. The browser persists one key for a logical
+checkout attempt and reuses it after an uncertain response; changing the
+address or cart starts a new attempt. The backend scopes the key to the user,
+serializes it through Redis, rejects changed payloads for an existing key, and
+replays the completed order response. Deterministic MoySklad `syncId` values
+make generated products and the customer order safe to recreate after a
+worker interruption. Only the owning request updates the last-used address
+and attempts the Telegram notification.
+
+The backend resolves the address with both its ID and the authenticated user ID before any external request, creates an immutable address snapshot, and copies it into the MoySklad customer order as `shipmentAddress` and `shipmentAddressFull`. `shipmentAddressFull.comment` remains reserved for the existing Privoz `#` marker; the courier note is written to `addInfo`. The address becomes the default only when MoySklad order creation succeeds and `last_used_at` is updated. Address preference and Telegram notification failures do not turn an already-created external order into a retryable checkout failure.
 
 The frontend reuses one address-book component for checkout and `/dashboard/addresses`. It supports create, edit, delete, case-insensitive title search, explicit selection, server-derived default selection, and a guarded single-submit checkout flow that preserves the cart on failure.
 
