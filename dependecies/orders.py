@@ -1,5 +1,6 @@
 from bot.sender import telegram_sender
 from db.address_repository import AddressRepository
+from db.redis import redis
 from manager.addresses import AddressManager
 from manager.moysklad import (
     CustomerOrderManager,
@@ -9,6 +10,7 @@ from manager.moysklad import (
 )
 from manager.order_changes import OrderChangesManager
 from manager.order_creation import OrderCreationManager
+from manager.order_idempotency import RedisOrderCreationIdempotency
 from manager.orders import (
     OrderActionsManager,
     OrderActionsRepository,
@@ -44,5 +46,6 @@ async def get_order_creation_manager():
         AddressManager(AddressRepository()),
         ProductManager(ProductRepository()),
         CustomerOrderManager(CustomerOrderRepository()),
+        RedisOrderCreationIdempotency(redis),
         telegram_sender,
     )
