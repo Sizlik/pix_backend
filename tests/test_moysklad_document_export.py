@@ -1,9 +1,20 @@
+from types import SimpleNamespace
+
 import pytest
 import requests
+from fastapi.testclient import TestClient
 
 from config import Settings
 from db.repository import MoySkladRepository
+from dependecies import moysklad as dependency_moysklad
 from errors import MoySkladDocumentExportError
+from main import create_app
+from manager.moysklad import (
+    CustomerOrderManager,
+    InvoiceOutManager,
+    PurchaseOrderManager,
+)
+from routes.users import current_user_dependency
 
 
 PDF_BYTES = b"%PDF-1.4\n%%EOF"
@@ -29,6 +40,32 @@ class FakeExportResponse:
                 f"status {self.status_code}",
                 response=self,
             )
+
+
+class ExportRepositoryStub:
+    def __init__(self, template_payload):
+        self.template_payload = template_payload
+        self.calls = []
+
+    async def read_all(self, **kwargs):
+        assert kwargs == {"metadata": "/metadata/embeddedtemplate"}
+        return self.template_payload
+
+    async def export_document(self, document_id, *, template, extension):
+        self.calls.append((document_id, template, extension))
+        return PDF_BYTES
+
+
+class ExportManagerStub:
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    async def export_template(self, document_id):
+        self.calls.append(document_id)
+        if self.error:
+            raise self.error
+        return PDF_BYTES
 
 
 @pytest.mark.asyncio
@@ -136,3 +173,109 @@ async def test_export_document_wraps_an_http_error_response(monkeypatch):
 
     assert raised.value.reason == "request_failed"
     assert raised.value.status_code == 503
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "manager_type",
+    [CustomerOrderManager, PurchaseOrderManager, InvoiceOutManager],
+)
+async def test_export_managers_use_the_first_embedded_template(manager_type):
+    template = {"meta": {"type": "embeddedtemplate"}}
+    repository = ExportRepositoryStub({"rows": [template]})
+
+    result = await manager_type(repository).export_template("document-id")
+
+    assert result == PDF_BYTES
+    assert repository.calls == [("document-id", template, "pdf")]
+
+
+@pytest.mark.asyncio
+async def test_export_manager_rejects_a_missing_embedded_template():
+    repository = ExportRepositoryStub({"rows": []})
+
+    with pytest.raises(MoySkladDocumentExportError) as raised:
+        await CustomerOrderManager(repository).export_template("document-id")
+
+    assert raised.value.reason == "template_missing"
+    assert repository.calls == []
+
+
+@pytest.mark.parametrize(
+    ("path", "dependency", "filename"),
+    [
+        (
+            "/api_v1/orders/export/customer-id",
+            dependency_moysklad.get_customer_order_manager,
+            "customer-order-customer-id.pdf",
+        ),
+        (
+            "/api_v1/orders/purchaseorder/export/purchase-id",
+            dependency_moysklad.get_purchase_order_manager,
+            "purchase-order-purchase-id.pdf",
+        ),
+        (
+            "/api_v1/orders/invoiceout/export/invoice-id",
+            dependency_moysklad.get_invoice_out_manager,
+            "invoice-out-invoice-id.pdf",
+        ),
+    ],
+)
+def test_export_routes_return_authenticated_pdf_attachments(
+    path,
+    dependency,
+    filename,
+):
+    app = create_app(Settings(_env_file=None, app_env="test"))
+    manager = ExportManagerStub()
+    app.dependency_overrides[current_user_dependency] = lambda: SimpleNamespace(
+        id="user"
+    )
+    app.dependency_overrides[dependency] = lambda: manager
+
+    with TestClient(app) as client:
+        response = client.get(path)
+
+    assert response.status_code == 200
+    assert response.content == PDF_BYTES
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="{filename}"'
+    )
+
+
+def test_export_route_requires_authentication():
+    app = create_app(Settings(_env_file=None, app_env="test"))
+    manager = ExportManagerStub()
+    app.dependency_overrides[
+        dependency_moysklad.get_customer_order_manager
+    ] = lambda: manager
+
+    with TestClient(app) as client:
+        response = client.get("/api_v1/orders/export/customer-id")
+
+    assert response.status_code == 401
+    assert manager.calls == []
+
+
+def test_export_failure_maps_to_safe_502():
+    app = create_app(Settings(_env_file=None, app_env="test"))
+    manager = ExportManagerStub(MoySkladDocumentExportError("invalid_pdf", 200))
+    app.dependency_overrides[current_user_dependency] = lambda: SimpleNamespace(
+        id="user"
+    )
+    app.dependency_overrides[
+        dependency_moysklad.get_customer_order_manager
+    ] = lambda: manager
+
+    with TestClient(app) as client:
+        response = client.get("/api_v1/orders/export/customer-id")
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": {
+            "code": "document_export_failed",
+            "message": "Document generation failed",
+        }
+    }
+    assert "invalid_pdf" not in response.text

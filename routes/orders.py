@@ -45,6 +45,14 @@ from routes.users import current_user_dependency
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
 
+def pdf_attachment(content: bytes, filename: str) -> Response:
+    return Response(
+        content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 def order_creation_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, IdempotencyKeyReused):
         return HTTPException(
@@ -113,27 +121,39 @@ async def create_order(
 
 
 @router.get("/export/{id}")
-async def export_pdf(id: str, customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)):
-    file = await customer_order_manager.export_template(id)
-    headers = {"Content-Disposition": "inline; filename=sample.pdf"}
-    response = Response(file, media_type="application/pdf", headers=headers)
-    return response
+async def export_pdf(
+    id: str,
+    _user: User = Depends(current_user_dependency),
+    customer_order_manager: CustomerOrderManager = Depends(
+        dependency_moysklad.get_customer_order_manager
+    ),
+):
+    content = await customer_order_manager.export_template(id)
+    return pdf_attachment(content, f"customer-order-{id}.pdf")
 
 
 @router.get("/purchaseorder/export/{id}")
-async def export_pdf_purchaseorder(id: str, purchase_order_manager: PurchaseOrderManager = Depends(dependency_moysklad.get_purchase_order_manager)):
-    file = await purchase_order_manager.export_template(id)
-    headers = {"Content-Disposition": "inline; filename=sample.pdf"}
-    response = Response(file, media_type="application/pdf", headers=headers)
-    return response
+async def export_pdf_purchaseorder(
+    id: str,
+    _user: User = Depends(current_user_dependency),
+    purchase_order_manager: PurchaseOrderManager = Depends(
+        dependency_moysklad.get_purchase_order_manager
+    ),
+):
+    content = await purchase_order_manager.export_template(id)
+    return pdf_attachment(content, f"purchase-order-{id}.pdf")
 
 
 @router.get("/invoiceout/export/{id}")
-async def export_pdf_invoice_out(id: str, invoice_out_manager: InvoiceOutManager = Depends(dependency_moysklad.get_invoice_out_manager)):
-    file = await invoice_out_manager.export_template(id)
-    headers = {"Content-Disposition": "inline; filename=sample.pdf"}
-    response = Response(file, media_type="application/pdf", headers=headers)
-    return response
+async def export_pdf_invoice_out(
+    id: str,
+    _user: User = Depends(current_user_dependency),
+    invoice_out_manager: InvoiceOutManager = Depends(
+        dependency_moysklad.get_invoice_out_manager
+    ),
+):
+    content = await invoice_out_manager.export_template(id)
+    return pdf_attachment(content, f"invoice-out-{id}.pdf")
 
 
 @router.put("/state/{order_id}")

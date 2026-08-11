@@ -9,6 +9,7 @@ from db.models.users import User
 from db.repository import AbstractRepository, MoySkladRepository
 from db.schemas import moysklad
 from db.schemas.orders import CheckoutOrderCreate, OrderCreate
+from errors import MoySkladDocumentExportError
 from manager.addresses import DeliveryAddressSnapshot
 from manager.phone_numbers import normalize_phone, phone_search_variants
 
@@ -248,6 +249,13 @@ def enrich_order_currency(order: dict) -> dict:
     return order
 
 
+def first_embedded_template(payload: object) -> dict:
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        raise MoySkladDocumentExportError("template_missing")
+    return rows[0]
+
+
 class CustomerOrderManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
@@ -256,8 +264,12 @@ class CustomerOrderManager:
         return await self.__repo.read_all(metadata="/metadata")
 
     async def export_template(self, id):
-        template = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
-        return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")
+        payload = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+        return await self.__repo.export_document(
+            str(id),
+            template=first_embedded_template(payload),
+            extension="pdf",
+        )
 
     async def change_state(self, id, state_name):
         state_meta = await self.get_state_meta(state_name)
@@ -360,8 +372,12 @@ class InvoiceOutManager:
         self.__repo = repo
 
     async def export_template(self, id):
-        template = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
-        return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")
+        payload = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+        return await self.__repo.export_document(
+            str(id),
+            template=first_embedded_template(payload),
+            extension="pdf",
+        )
 
     async def get_user_invoices(self, user: User):
         return await self.__repo.read_all(
@@ -403,8 +419,12 @@ class PurchaseOrderManager:
         self.__repo = repo
 
     async def export_template(self, id):
-        template = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
-        return await self.__repo.export(link=f"{id}/export", template=template.get("rows")[0], extension="pdf")
+        payload = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+        return await self.__repo.export_document(
+            str(id),
+            template=first_embedded_template(payload),
+            extension="pdf",
+        )
 
     async def get_by_id(self, id):
         return await self.__repo.read_one(id)

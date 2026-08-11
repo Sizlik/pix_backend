@@ -11,7 +11,12 @@ from db.redis import get_redis_backend
 from dependecies.chat import get_chat_realtime
 from dependecies.notifications import get_notification_realtime
 from dependecies.order_chat import get_order_chat_runtime
-from errors import AddressNameConflict, AddressNotFound, IntegrationNotConfigured
+from errors import (
+    AddressNameConflict,
+    AddressNotFound,
+    IntegrationNotConfigured,
+    MoySkladDocumentExportError,
+)
 from routes.addresses import router as router_addresses
 from routes.bitrix import router as router_bitrix
 from routes.bot import router as router_bot
@@ -93,6 +98,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         exc: IntegrationNotConfigured,
     ):
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @application.exception_handler(MoySkladDocumentExportError)
+    async def moysklad_document_export_error_handler(
+        request: Request,
+        exc: MoySkladDocumentExportError,
+    ):
+        return JSONResponse(
+            status_code=502,
+            content={
+                "detail": {
+                    "code": "document_export_failed",
+                    "message": "Document generation failed",
+                }
+            },
+        )
 
     @application.exception_handler(AddressNotFound)
     async def address_not_found_handler(request: Request, exc: AddressNotFound):

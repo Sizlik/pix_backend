@@ -119,6 +119,11 @@ The backend resolves the address with both its ID and the authenticated user ID 
 
 The frontend reuses one address-book component for checkout and `/dashboard/addresses`. It supports create, edit, delete, case-insensitive title search, explicit selection, server-derived default selection, and a guarded single-submit checkout flow that preserves the cart on failure.
 
+Authenticated order-document export endpoints proxy MoySklad print requests and
+return only verified PDF attachments. Temporary MoySklad download URLs stay on
+the server, while upstream timeouts, HTTP errors, incomplete responses, and
+invalid content are reduced to a safe `502 document_export_failed` response.
+
 Customer edits are staged in the browser and saved through
 `PUT /api_v1/orders/{id}/changes`. The backend accepts edits only in
 `Подтвержден менеджером`, `Ожидает подтверждения клиента`,
