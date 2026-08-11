@@ -49,7 +49,10 @@ def pdf_attachment(content: bytes, filename: str) -> Response:
     return Response(
         content,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 
@@ -128,7 +131,10 @@ async def export_pdf(
         dependency_moysklad.get_customer_order_manager
     ),
 ):
-    content = await customer_order_manager.export_template(id)
+    try:
+        content = await customer_order_manager.export_template(id, _user)
+    except OrderNotAccessible as exc:
+        raise order_change_http_error(exc) from None
     return pdf_attachment(content, f"customer-order-{id}.pdf")
 
 
@@ -140,7 +146,10 @@ async def export_pdf_purchaseorder(
         dependency_moysklad.get_purchase_order_manager
     ),
 ):
-    content = await purchase_order_manager.export_template(id)
+    try:
+        content = await purchase_order_manager.export_template(id, _user)
+    except OrderNotAccessible as exc:
+        raise order_change_http_error(exc) from None
     return pdf_attachment(content, f"purchase-order-{id}.pdf")
 
 
@@ -152,7 +161,10 @@ async def export_pdf_invoice_out(
         dependency_moysklad.get_invoice_out_manager
     ),
 ):
-    content = await invoice_out_manager.export_template(id)
+    try:
+        content = await invoice_out_manager.export_template(id, _user)
+    except OrderNotAccessible as exc:
+        raise order_change_http_error(exc) from None
     return pdf_attachment(content, f"invoice-out-{id}.pdf")
 
 

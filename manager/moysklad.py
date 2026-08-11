@@ -9,7 +9,7 @@ from db.models.users import User
 from db.repository import AbstractRepository, MoySkladRepository
 from db.schemas import moysklad
 from db.schemas.orders import CheckoutOrderCreate, OrderCreate
-from errors import MoySkladDocumentExportError
+from errors import MoySkladDocumentExportError, OrderNotAccessible
 from manager.addresses import DeliveryAddressSnapshot
 from manager.phone_numbers import normalize_phone, phone_search_variants
 
@@ -256,6 +256,17 @@ def first_embedded_template(payload: object) -> dict:
     return rows[0]
 
 
+def ensure_document_owner(payload: object, user: User) -> None:
+    if not isinstance(payload, dict) or not payload.get("id"):
+        raise OrderNotAccessible()
+    agent = payload.get("agent")
+    meta = agent.get("meta") if isinstance(agent, dict) else None
+    href = meta.get("href") if isinstance(meta, dict) else None
+    owner_id = href.rsplit("/", 1)[-1] if isinstance(href, str) else None
+    if owner_id != str(user.moysklad_counterparty_id):
+        raise OrderNotAccessible()
+
+
 class CustomerOrderManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
@@ -263,8 +274,10 @@ class CustomerOrderManager:
     async def get_metadata(self):
         return await self.__repo.read_all(metadata="/metadata")
 
-    async def export_template(self, id):
-        payload = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+    async def export_template(self, id, user: User):
+        context = await self.__repo.read_export_context(str(id))
+        ensure_document_owner(context, user)
+        payload = await self.__repo.read_embedded_templates()
         return await self.__repo.export_document(
             str(id),
             template=first_embedded_template(payload),
@@ -371,8 +384,10 @@ class InvoiceOutManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
 
-    async def export_template(self, id):
-        payload = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+    async def export_template(self, id, user: User):
+        context = await self.__repo.read_export_context(str(id))
+        ensure_document_owner(context, user)
+        payload = await self.__repo.read_embedded_templates()
         return await self.__repo.export_document(
             str(id),
             template=first_embedded_template(payload),
@@ -418,8 +433,10 @@ class PurchaseOrderManager:
     def __init__(self, repo: AbstractRepository):
         self.__repo = repo
 
-    async def export_template(self, id):
-        payload = await self.__repo.read_all(metadata="/metadata/embeddedtemplate")
+    async def export_template(self, id, user: User):
+        if not user.is_superuser:
+            raise OrderNotAccessible()
+        payload = await self.__repo.read_embedded_templates()
         return await self.__repo.export_document(
             str(id),
             template=first_embedded_template(payload),

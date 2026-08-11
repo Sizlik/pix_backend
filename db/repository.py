@@ -57,6 +57,14 @@ class AbstractRepository(ABC):
     ) -> bytes:
         raise NotImplementedError
 
+    @abstractmethod
+    async def read_embedded_templates(self) -> dict:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def read_export_context(self, document_id: str) -> dict:
+        raise NotImplementedError
+
 
 class MoySkladRepository(AbstractRepository):
     model = None
@@ -195,6 +203,78 @@ class MoySkladRepository(AbstractRepository):
 
         return response.content
 
+    async def read_embedded_templates(self) -> dict:
+        try:
+            response = requests.get(
+                f"{self.base_url}{self.model}/metadata/embeddedtemplate",
+                headers=self._headers(),
+                timeout=(5, 30),
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            logger.warning(
+                "MoySklad embedded template request failed model=%s status=%s",
+                self.model,
+                status_code,
+            )
+            raise MoySkladDocumentExportError(
+                "template_request_failed",
+                status_code,
+            ) from exc
+        except ValueError as exc:
+            logger.warning(
+                "MoySklad embedded template response was invalid model=%s status=%s",
+                self.model,
+                response.status_code,
+            )
+            raise MoySkladDocumentExportError(
+                "template_request_failed",
+                response.status_code,
+            ) from exc
+
+    async def read_export_context(self, document_id: str) -> dict:
+        try:
+            response = requests.get(
+                f"{self.base_url}{self.model}/{document_id}",
+                headers=self._headers(),
+                params={"expand": "agent"},
+                timeout=(5, 30),
+            )
+            if response.status_code == 404:
+                return {}
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("invalid document context")
+            return payload
+        except requests.RequestException as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            logger.warning(
+                "MoySklad document context request failed "
+                "model=%s document_id=%s status=%s",
+                self.model,
+                document_id,
+                status_code,
+            )
+            raise MoySkladDocumentExportError(
+                "context_request_failed",
+                status_code,
+            ) from exc
+        except ValueError as exc:
+            logger.warning(
+                "MoySklad document context response was invalid "
+                "model=%s document_id=%s status=%s",
+                self.model,
+                document_id,
+                response.status_code,
+            )
+            raise MoySkladDocumentExportError(
+                "context_request_failed",
+                response.status_code,
+            ) from exc
+
 
 class SQLAlchemyRepository(AbstractRepository):
     model = None
@@ -265,4 +345,10 @@ class SQLAlchemyRepository(AbstractRepository):
         template: dict,
         extension: str,
     ) -> bytes:
+        raise NotImplementedError
+
+    async def read_embedded_templates(self) -> dict:
+        raise NotImplementedError
+
+    async def read_export_context(self, document_id: str) -> dict:
         raise NotImplementedError
