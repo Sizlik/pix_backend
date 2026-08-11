@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 
+import requests
 
 from db.models.orders import OrderItems
 from db.models.users import User
@@ -6,6 +8,7 @@ from db.repository import AbstractRepository, MoySkladRepository
 from db.schemas import moysklad
 from db.schemas.orders import OrderCreate
 from manager.addresses import DeliveryAddressSnapshot
+from manager.phone_numbers import normalize_phone, phone_search_variants
 
 
 def moysklad_delivery_payload(address: DeliveryAddressSnapshot) -> dict:
@@ -36,6 +39,31 @@ def moysklad_delivery_payload(address: DeliveryAddressSnapshot) -> dict:
 
 class CounterpartyRepository(MoySkladRepository):
     model = "entity/counterparty"
+
+    async def find_by_phone_candidates(
+        self,
+        phones: tuple[str, ...],
+    ) -> list[dict]:
+        if not phones:
+            return []
+        response = requests.get(
+            f"{self.base_url}{self.model}",
+            headers=self._headers(),
+            params={
+                "filter": ";".join(f"phone={phone}" for phone in phones),
+                "limit": 1000,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("invalid MoySklad counterparty collection")
+        rows = payload.get("rows")
+        if not isinstance(rows, list) or not all(
+            isinstance(row, dict) for row in rows
+        ):
+            raise ValueError("invalid MoySklad counterparty collection")
+        return rows
 
 
 class CounterpartyReportRepository(MoySkladRepository):
@@ -70,13 +98,55 @@ class PurchaseOrderRepository(MoySkladRepository):
     model = "entity/purchaseorder"
 
 
+@dataclass(frozen=True)
+class CounterpartyResolution:
+    counterparty: dict
+    created: bool
+
+
 class CounterpartyManager:
-    def __init__(self, repo: AbstractRepository):
+    def __init__(self, repo: CounterpartyRepository):
         self.__repo = repo
 
-    async def create_user_counterparty(self, counterparty_data: moysklad.CounterpartyCreate):
+    async def create_user_counterparty(
+        self,
+        counterparty_data: moysklad.CounterpartyCreate,
+    ):
         counterparty_dict = counterparty_data.model_dump()
         return await self.__repo.create(**counterparty_dict)
+
+    async def resolve_user_counterparty(
+        self,
+        counterparty_data: moysklad.CounterpartyCreate,
+    ) -> CounterpartyResolution:
+        normalized_phone = normalize_phone(counterparty_data.phone)
+        candidates = await self.__repo.find_by_phone_candidates(
+            phone_search_variants(counterparty_data.phone)
+        )
+
+        matches = []
+        for candidate in candidates:
+            phone = candidate.get("phone")
+            if not isinstance(phone, str):
+                raise ValueError("invalid MoySklad counterparty candidate")
+            if normalize_phone(phone) == normalized_phone:
+                matches.append(candidate)
+
+        if len(matches) == 1:
+            match = matches[0]
+            meta = match.get("meta")
+            if (
+                not isinstance(match.get("id"), str)
+                or not match["id"]
+                or not isinstance(meta, dict)
+                or not isinstance(meta.get("uuidHref"), str)
+                or not meta["uuidHref"]
+            ):
+                raise ValueError("invalid MoySklad counterparty match")
+            return CounterpartyResolution(match, created=False)
+
+        created = await self.create_user_counterparty(counterparty_data)
+        return CounterpartyResolution(created, created=True)
 
 
 class CounterpartyReportManager:
