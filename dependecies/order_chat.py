@@ -8,6 +8,7 @@ from db.moysklad_order_chat_repository import (
 )
 from db.order_chat_repository import OrderChatRepository
 from dependecies.chat import get_chat_realtime
+from dependecies.notifications import build_notification_manager
 from manager.chat_outbox import (
     OrderChatOutboxWorker,
     OrderChatTelegramHandlers,
@@ -87,6 +88,7 @@ def get_order_chat_runtime(settings: Settings, realtime=None) -> OrderChatRuntim
         attachment_max_count=chat_settings.attachment_max_count,
         attachment_max_bytes=chat_settings.attachment_max_bytes,
         realtime=realtime,
+        notification_manager=build_notification_manager(),
     )
     telegram_handlers = OrderChatTelegramHandlers(repository, telegram_sender)
     worker = OrderChatOutboxWorker(

@@ -34,6 +34,7 @@ class MoySkladOrderChatSynchronizer:
         attachment_max_count: int = 10,
         attachment_max_bytes: int = 20 * 1024 * 1024,
         realtime=None,
+        notification_manager=None,
     ):
         self._repository = repository
         self._moysklad = moysklad
@@ -41,6 +42,7 @@ class MoySkladOrderChatSynchronizer:
         self._attachment_max_count = attachment_max_count
         self._attachment_max_bytes = attachment_max_bytes
         self._realtime = realtime
+        self._notification_manager = notification_manager
 
     async def process_moysklad_update(self, event) -> None:
         order_id = event.order_id
@@ -166,6 +168,8 @@ class MoySkladOrderChatSynchronizer:
             for key in stored_keys:
                 await self._storage.delete(key)
             raise
+        if self._notification_manager is not None:
+            await self._notification_manager.notify_count_changed(client.id)
         if self._realtime is not None:
             try:
                 await self._realtime.publish(str(order_id), self._message_payload(message))
