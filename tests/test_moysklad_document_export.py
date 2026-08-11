@@ -16,7 +16,6 @@ from manager.moysklad import (
 )
 from routes.users import current_user_dependency
 
-
 PDF_BYTES = b"%PDF-1.4\n%%EOF"
 
 

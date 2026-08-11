@@ -11,7 +11,6 @@ from config import Settings, get_settings, require_secret, require_value
 from db.postgres import async_session_maker
 from errors import MoySkladDocumentExportError
 
-
 logger = logging.getLogger(__name__)
 
 
