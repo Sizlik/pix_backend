@@ -112,7 +112,8 @@ serializes it through Redis, rejects changed payloads for an existing key, and
 replays the completed order response. Deterministic MoySklad `syncId` values
 make generated products and the customer order safe to recreate after a
 worker interruption. Only the owning request updates the last-used address
-and attempts the Telegram notification.
+and attempts the Telegram notification. Completed replay records remain in
+Redis for 24 hours, which is the bounded API replay and conflict window.
 
 The backend resolves the address with both its ID and the authenticated user ID before any external request, creates an immutable address snapshot, and copies it into the MoySklad customer order as `shipmentAddress` and `shipmentAddressFull`. `shipmentAddressFull.comment` remains reserved for the existing Privoz `#` marker; the courier note is written to `addInfo`. The address becomes the default only when MoySklad order creation succeeds and `last_used_at` is updated. Address preference and Telegram notification failures do not turn an already-created external order into a retryable checkout failure.
 

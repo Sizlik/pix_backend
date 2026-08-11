@@ -2,6 +2,8 @@ import json
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
+from redis.exceptions import LockNotOwnedError
+
 from errors import (
     IdempotencyKeyReused,
     OrderCreationIdempotencyUnavailable,
@@ -34,7 +36,20 @@ class RedisOrderCreationIdempotency:
     async def _read(self, record_key: str):
         try:
             raw = await self._redis.get(record_key)
-            return json.loads(raw) if raw is not None else None
+            if raw is None:
+                return None
+            record = json.loads(raw)
+            if (
+                not isinstance(record, dict)
+                or not isinstance(record.get("fingerprint"), str)
+                or record.get("state") not in {"processing", "completed"}
+                or (
+                    record["state"] == "completed"
+                    and not isinstance(record.get("result"), dict)
+                )
+            ):
+                raise ValueError("invalid order idempotency record")
+            return record
         except Exception as error:
             raise OrderCreationIdempotencyUnavailable from error
 
@@ -96,6 +111,18 @@ class RedisOrderCreationIdempotency:
                     {"state": "processing", "fingerprint": fingerprint},
                 )
             result = await operation()
+            try:
+                await lock.reacquire()
+            except LockNotOwnedError:
+                cached = self._resolve(
+                    await self._read(record_key),
+                    fingerprint,
+                )
+                if cached is not None:
+                    return cached, False
+                raise OrderCreationInProgress from None
+            except Exception as error:
+                raise OrderCreationIdempotencyUnavailable from error
             await self._write(
                 record_key,
                 {

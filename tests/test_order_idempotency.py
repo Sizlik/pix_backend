@@ -3,6 +3,7 @@ import json
 from uuid import UUID
 
 import pytest
+from redis.exceptions import LockNotOwnedError
 
 from errors import (
     IdempotencyKeyReused,
@@ -16,10 +17,17 @@ KEY = UUID("00000000-0000-0000-0000-000000000020")
 
 
 class FakeLock:
-    def __init__(self, lock, options, force_unavailable=False):
+    def __init__(
+        self,
+        lock,
+        options,
+        force_unavailable=False,
+        lose_before_reacquire=False,
+    ):
         self._lock = lock
         self.options = options
         self.force_unavailable = force_unavailable
+        self.lose_before_reacquire = lose_before_reacquire
 
     async def acquire(self):
         if self.force_unavailable:
@@ -37,6 +45,11 @@ class FakeLock:
         if self._lock.locked():
             self._lock.release()
 
+    async def reacquire(self):
+        if self.lose_before_reacquire:
+            raise LockNotOwnedError("lease expired")
+        return True
+
 
 class FakeRedis:
     def __init__(self):
@@ -49,6 +62,7 @@ class FakeRedis:
         self.fail_set_call = None
         self.force_lock_unavailable = False
         self.lock_error = None
+        self.lose_lock_before_reacquire = False
 
     async def get(self, key):
         if self.get_error:
@@ -72,6 +86,7 @@ class FakeRedis:
             shared,
             options,
             force_unavailable=self.force_lock_unavailable,
+            lose_before_reacquire=self.lose_lock_before_reacquire,
         )
 
 
@@ -199,10 +214,55 @@ async def test_lock_timeout_reports_in_progress_with_exact_options():
 
 
 @pytest.mark.asyncio
+async def test_lost_lease_cannot_complete_attempt_or_claim_external_effects():
+    redis = FakeRedis()
+    redis.lose_lock_before_reacquire = True
+    coordinator = RedisOrderCreationIdempotency(redis)
+
+    with pytest.raises(OrderCreationInProgress):
+        await coordinator.run(USER_ID, KEY, "fingerprint", _return_order)
+
+    record_key = coordinator._base_key(USER_ID, KEY)
+    assert json.loads(redis.values[record_key]) == {
+        "state": "processing",
+        "fingerprint": "fingerprint",
+    }
+
+
+@pytest.mark.asyncio
 async def test_redis_read_failure_never_runs_external_operation():
     redis = FakeRedis()
     redis.get_error = RuntimeError("redis unavailable")
     coordinator = RedisOrderCreationIdempotency(redis)
+    called = False
+
+    async def operation():
+        nonlocal called
+        called = True
+        return {"id": "order"}
+
+    with pytest.raises(OrderCreationIdempotencyUnavailable):
+        await coordinator.run(USER_ID, KEY, "fingerprint", operation)
+    assert called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "record",
+    [
+        {},
+        [],
+        {"state": "unknown", "fingerprint": "fingerprint"},
+        {"state": "completed", "fingerprint": "fingerprint"},
+    ],
+)
+async def test_malformed_redis_record_uses_domain_error_without_external_call(
+    record,
+):
+    redis = FakeRedis()
+    coordinator = RedisOrderCreationIdempotency(redis)
+    record_key = coordinator._base_key(USER_ID, KEY)
+    redis.values[record_key] = json.dumps(record)
     called = False
 
     async def operation():
