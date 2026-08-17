@@ -34,6 +34,12 @@ class InvalidOrderChanges(ValueError):
     pass
 
 
+class MoySkladOrderStateMissing(RuntimeError):
+    def __init__(self, state_name: str) -> None:
+        self.state_name = state_name
+        super().__init__("required MoySklad order state is missing")
+
+
 class AddressNotFound(LookupError):
     pass
 

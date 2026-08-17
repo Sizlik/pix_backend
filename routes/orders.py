@@ -24,6 +24,7 @@ from dependecies import (
 from errors import (
     IdempotencyKeyReused,
     InvalidOrderChanges,
+    MoySkladOrderStateMissing,
     OrderCreationIdempotencyUnavailable,
     OrderCreationInProgress,
     OrderNotAccessible,
@@ -97,6 +98,14 @@ def order_change_http_error(exc: Exception) -> HTTPException:
         return HTTPException(
             409,
             detail={"code": "order_version_conflict", "message": "Order was updated"},
+        )
+    if isinstance(exc, MoySkladOrderStateMissing):
+        return HTTPException(
+            503,
+            detail={
+                "code": "moysklad_order_state_missing",
+                "message": "Order editing is temporarily unavailable",
+            },
         )
     return HTTPException(
         422,
@@ -237,6 +246,7 @@ async def save_order_changes(
         OrderNotEditable,
         OrderVersionConflict,
         InvalidOrderChanges,
+        MoySkladOrderStateMissing,
     ) as exc:
         raise order_change_http_error(exc) from None
 
@@ -272,6 +282,7 @@ async def delete_order_position(
         OrderNotEditable,
         OrderVersionConflict,
         InvalidOrderChanges,
+        MoySkladOrderStateMissing,
     ) as exc:
         raise order_change_http_error(exc) from None
 
@@ -295,6 +306,7 @@ async def update_order_position_count(
         OrderNotEditable,
         OrderVersionConflict,
         InvalidOrderChanges,
+        MoySkladOrderStateMissing,
     ) as exc:
         raise order_change_http_error(exc) from None
 
@@ -315,6 +327,7 @@ async def add_order_positions(
         OrderNotEditable,
         OrderVersionConflict,
         InvalidOrderChanges,
+        MoySkladOrderStateMissing,
     ) as exc:
         raise order_change_http_error(exc) from None
 

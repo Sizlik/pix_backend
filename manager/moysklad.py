@@ -9,7 +9,11 @@ from db.models.users import User
 from db.repository import AbstractRepository, MoySkladRepository
 from db.schemas import moysklad
 from db.schemas.orders import CheckoutOrderCreate, OrderCreate
-from errors import MoySkladDocumentExportError, OrderNotAccessible
+from errors import (
+    MoySkladDocumentExportError,
+    MoySkladOrderStateMissing,
+    OrderNotAccessible,
+)
 from manager.addresses import DeliveryAddressSnapshot
 from manager.phone_numbers import normalize_phone, phone_search_variants
 
@@ -293,7 +297,7 @@ class CustomerOrderManager:
         for state in metadata.get("states", []):
             if state.get("name") == state_name:
                 return state["meta"]
-        raise RuntimeError("required MoySklad order state is missing")
+        raise MoySkladOrderStateMissing(state_name)
 
     async def replace_positions_and_state(
         self,

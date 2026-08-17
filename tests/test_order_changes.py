@@ -14,6 +14,7 @@ from db.schemas.orders import (
 )
 from errors import (
     InvalidOrderChanges,
+    MoySkladOrderStateMissing,
     OrderNotAccessible,
     OrderNotEditable,
     OrderVersionConflict,
@@ -152,16 +153,21 @@ def order_payload(
 
 
 class StubCustomerOrders:
-    def __init__(self, order=None, error=None):
+    def __init__(self, order=None, error=None, state_error=None):
         self.order = order or order_payload()
         self.error = error
+        self.state_error = state_error
         self.replacements = []
+        self.state_lookups = []
 
     async def get_order_by_id(self, order_id):
         return self.order
 
     async def get_state_meta(self, state_name):
         assert state_name == "Изменен клиентом"
+        self.state_lookups.append(state_name)
+        if self.state_error:
+            raise self.state_error
         return {"href": "https://api.moysklad.ru/state/changed"}
 
     async def replace_positions_and_state(self, order_id, positions, state_meta):
@@ -274,6 +280,34 @@ async def test_manager_noop_does_not_change_state_create_products_or_notify():
     assert result.notification_sent is None
     assert orders.replacements == []
     assert products.orders == []
+    assert notifier.messages == []
+
+
+@pytest.mark.asyncio
+async def test_missing_target_state_is_detected_before_product_creation():
+    error = MoySkladOrderStateMissing("Изменен клиентом")
+    orders = StubCustomerOrders(state_error=error)
+    products = StubProducts()
+    notifier = StubNotifier()
+    request = OrderChangesRequest(
+        expected_updated=orders.order["updated"],
+        positions=[
+            ExistingOrderPositionChange(id=POSITION_1, count=1),
+            NewOrderPositionChange(
+                link="https://shop.example/new",
+                count=1,
+                comment="",
+            ),
+        ],
+    )
+
+    with pytest.raises(MoySkladOrderStateMissing):
+        await OrderChangesManager(orders, products, notifier).save_changes(
+            make_user(), orders.order["id"], request
+        )
+
+    assert products.orders == []
+    assert orders.replacements == []
     assert notifier.messages == []
 
 

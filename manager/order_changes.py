@@ -215,6 +215,7 @@ class OrderChangesManager:
                 order=order, changed=False, notification_sent=None
             )
 
+        state_meta = await self._customer_orders.get_state_meta(TARGET_ORDER_STATUS)
         product_rows = OrderCreate(
             order_items=[
                 OrderItemCreate(link=item.link, count=item.count, comment=item.comment)
@@ -231,7 +232,6 @@ class OrderChangesManager:
             serialize_new_position(item, product)
             for item, product in zip(plan.new, products, strict=True)
         )
-        state_meta = await self._customer_orders.get_state_meta(TARGET_ORDER_STATUS)
         updated_order = await self._customer_orders.replace_positions_and_state(
             order_id, positions, state_meta
         )
