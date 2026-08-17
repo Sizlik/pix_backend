@@ -257,6 +257,7 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "PRIVOZ_PASSWORD",
         "MAILERSEND_TOKEN",
         "NEXT_PUBLIC_BACKEND_URL",
+        "NEXT_PUBLIC_ENABLE_MOYSKLAD_ORDER_CHAT",
         "PGADMIN_DEFAULT_EMAIL",
         "PGADMIN_DEFAULT_PASSWORD",
     }
@@ -289,6 +290,7 @@ def test_production_environment_template_is_complete_and_copy_safe():
     assert values["NEXT_PUBLIC_BACKEND_URL"] == (
         "https://pixlogistic.com/api_v1"
     )
+    assert values["NEXT_PUBLIC_ENABLE_MOYSKLAD_ORDER_CHAT"] == "false"
     assert all(values[key] == "" for key in blank_sensitive_keys)
     assert "MOYSKLAD_PASWORD" not in values
 
