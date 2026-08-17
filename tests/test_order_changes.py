@@ -189,7 +189,8 @@ class StubProducts:
 
 
 class StubNotifier:
-    def __init__(self, error=None):
+    def __init__(self, result=True, error=None):
+        self.result = result
         self.error = error
         self.messages = []
 
@@ -197,6 +198,7 @@ class StubNotifier:
         if self.error:
             raise self.error
         self.messages.append(text)
+        return self.result
 
 
 def make_user():
@@ -336,6 +338,25 @@ async def test_moysklad_failure_skips_telegram_and_telegram_failure_returns_warn
     ).save_changes(make_user(), orders.order["id"], request)
     assert result.changed is True
     assert result.notification_sent is False
+
+
+@pytest.mark.asyncio
+async def test_false_notification_result_is_reported_after_saved_order_change():
+    request = OrderChangesRequest(
+        expected_updated="2026-08-10 12:00:00.000",
+        positions=[ExistingOrderPositionChange(id=POSITION_1, count=2)],
+    )
+    orders = StubCustomerOrders()
+
+    result = await OrderChangesManager(
+        orders,
+        StubProducts(),
+        StubNotifier(result=False),
+    ).save_changes(make_user(), orders.order["id"], request)
+
+    assert result.changed is True
+    assert result.notification_sent is False
+    assert len(orders.replacements) == 1
 
 
 @pytest.mark.asyncio

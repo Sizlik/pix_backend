@@ -238,11 +238,12 @@ class OrderChangesManager:
 
         notification_sent = True
         try:
-            await self._notifier.send_group_message(
+            notification_result = await self._notifier.send_group_message(
                 format_order_change_message(updated_order, user, plan.summary)
             )
+            notification_sent = notification_result is not False
         except Exception:
-            logger.warning("Telegram order-change notification failed")
+            logger.warning("Telegram order-change notification failed", exc_info=True)
             notification_sent = False
         return OrderChangesResponse(
             order=updated_order,
