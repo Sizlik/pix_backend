@@ -39,12 +39,29 @@ def default_address_id_statement(user_id):
     )
 
 
-def constraint_name(exc: IntegrityError) -> str | None:
-    return getattr(
-        getattr(getattr(exc, "orig", None), "diag", None),
-        "constraint_name",
-        None,
-    )
+def constraint_name(exc: BaseException | object) -> str | None:
+    pending = [exc]
+    visited: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in visited:
+            continue
+        visited.add(id(current))
+
+        name = getattr(current, "constraint_name", None)
+        if isinstance(name, str):
+            return name
+        diag_name = getattr(
+            getattr(current, "diag", None), "constraint_name", None
+        )
+        if isinstance(diag_name, str):
+            return diag_name
+
+        pending.extend(
+            getattr(current, attribute, None)
+            for attribute in ("orig", "__cause__", "__context__")
+        )
+    return None
 
 
 class AddressRepository:
