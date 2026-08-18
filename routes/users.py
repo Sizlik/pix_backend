@@ -1,16 +1,19 @@
+import logging
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from fastapi_users import FastAPIUsers
-from fastapi_users.authentication import BearerTransport, AuthenticationBackend
+from fastapi_users.authentication import AuthenticationBackend, BearerTransport
 
 from bot.sender import telegram_sender
-from dependecies import moysklad
 from db.models.users import User
 from db.redis import get_redis_strategy
-from db.schemas.users import UserRead, UserCreate, UserUpdate
+from db.schemas.users import UserCreate, UserRead, UserUpdate
+from dependecies import moysklad
 from manager.moysklad import CounterpartyReportManager, OperationManager
-from manager.users import get_user_manager, UserManager
+from manager.users import UserManager, get_user_manager
+
+logger = logging.getLogger(__name__)
 
 bearer_transport = BearerTransport(tokenUrl="api_v1/users/auth/jwt/login")
 
@@ -35,7 +38,28 @@ async def get_me(
         counterparty_report_manager: CounterpartyReportManager = Depends(moysklad.get_counterparty_report_manager),
         user_manager: UserManager = Depends(get_user_manager),
 ):
-    counterparty_report = await counterparty_report_manager.get_user_counterparty_report(user)
+    if not user.is_verified:
+        return user
+
+    if not user.moysklad_counterparty_id:
+        try:
+            user, _ = await user_manager.ensure_moysklad_counterparty(user)
+        except Exception:
+            logger.exception(
+                "Failed to recover verified user's MoySklad link"
+            )
+            return user
+
+    try:
+        counterparty_report = (
+            await counterparty_report_manager.get_user_counterparty_report(user)
+        )
+    except Exception:
+        logger.exception(
+            "Failed to refresh verified user's MoySklad balance"
+        )
+        return user
+
     user_balance = counterparty_report.get("balance")
     if user_balance is not None and user.balance != user_balance:
         user_update_data = UserUpdate(balance=user_balance)

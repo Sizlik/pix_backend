@@ -15,6 +15,7 @@ from manager.moysklad import (
 )
 from manager.phone_numbers import normalize_phone, phone_search_variants
 from manager.users import UserManager
+from routes.users import get_me
 
 
 @pytest.mark.parametrize(
@@ -257,6 +258,8 @@ def verified_user(**overrides):
         "first_name": "Иван",
         "phone_number": "+7 (999) 123-45-67",
         "name_id": 7,
+        "balance": 0,
+        "is_verified": True,
         "moysklad_counterparty_id": None,
         "moysklad_counterparty_meta": None,
     }
@@ -380,6 +383,127 @@ async def test_after_verify_logs_telegram_failure_after_persisting(
 
     assert events == ["update", "telegram"]
     assert "MoySklad user verification notification" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_after_verify_does_not_reject_verified_user_when_linking_fails(
+    monkeypatch,
+    caplog,
+):
+    manager = user_manager()
+
+    async def fail_lookup():
+        raise requests.Timeout("MoySklad unavailable")
+
+    monkeypatch.setattr(
+        users_module.moysklad,
+        "get_counterparty_manager",
+        fail_lookup,
+    )
+
+    with caplog.at_level(logging.ERROR):
+        await manager.on_after_verify(verified_user())
+
+    assert "Failed to link verified user to MoySklad" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_updated_me_recovers_missing_counterparty_link(monkeypatch):
+    external = counterparty(1, "89991234567")
+    resolution_manager = StubResolutionManager(
+        CounterpartyResolution(external, created=False)
+    )
+    manager = user_manager()
+    user = verified_user()
+
+    async def get_counterparty_manager():
+        return resolution_manager
+
+    async def update(data, current_user, request=None):
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(current_user, field, value)
+        return current_user
+
+    class CounterpartyReport:
+        async def get_user_counterparty_report(self, current_user):
+            assert str(current_user.moysklad_counterparty_id) == external["id"]
+            return {"balance": 4250}
+
+    monkeypatch.setattr(
+        users_module.moysklad,
+        "get_counterparty_manager",
+        get_counterparty_manager,
+    )
+    monkeypatch.setattr(manager, "update", update)
+
+    result = await get_me(
+        user=user,
+        counterparty_report_manager=CounterpartyReport(),
+        user_manager=manager,
+    )
+
+    assert str(result.moysklad_counterparty_id) == external["id"]
+    assert result.moysklad_counterparty_meta == external["meta"]
+    assert result.balance == 4250
+
+
+@pytest.mark.asyncio
+async def test_updated_me_allows_login_while_link_recovery_is_unavailable(
+    monkeypatch,
+    caplog,
+):
+    manager = user_manager()
+    user = verified_user()
+
+    async def fail_lookup():
+        raise requests.Timeout("MoySklad unavailable")
+
+    class CounterpartyReport:
+        async def get_user_counterparty_report(self, current_user):
+            raise AssertionError("report requested without a counterparty link")
+
+    monkeypatch.setattr(
+        users_module.moysklad,
+        "get_counterparty_manager",
+        fail_lookup,
+    )
+
+    with caplog.at_level(logging.ERROR):
+        result = await get_me(
+            user=user,
+            counterparty_report_manager=CounterpartyReport(),
+            user_manager=manager,
+        )
+
+    assert result is user
+    assert "Failed to recover verified user's MoySklad link" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_updated_me_allows_login_while_balance_refresh_is_unavailable(
+    caplog,
+):
+    manager = user_manager()
+    user = verified_user(
+        moysklad_counterparty_id="00000000-0000-0000-0000-000000000001",
+        moysklad_counterparty_meta={
+            "uuidHref": "https://online.moysklad.ru/existing"
+        },
+    )
+
+    class CounterpartyReport:
+        async def get_user_counterparty_report(self, current_user):
+            raise requests.Timeout("MoySklad unavailable")
+
+    with caplog.at_level(logging.ERROR):
+        result = await get_me(
+            user=user,
+            counterparty_report_manager=CounterpartyReport(),
+            user_manager=manager,
+        )
+
+    assert result is user
+    assert "Failed to refresh verified user's MoySklad balance" in caplog.text
 
 
 @pytest.mark.asyncio

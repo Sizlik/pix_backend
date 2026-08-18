@@ -45,12 +45,13 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         await redis.set(redis_key, token, ex=300)  # TTL 5 минут
         send_verification_code(user.email, verification_code)
 
-    async def on_after_verify(self, user: User, request: Optional[Request] = None) -> None:
+    async def ensure_moysklad_counterparty(
+        self,
+        user: User,
+        request: Optional[Request] = None,
+    ):
         if user.moysklad_counterparty_id:
-            await telegram_sender.send_group_message(
-                f'<a href="{user.moysklad_counterparty_meta.get("uuidHref")}">Пользователь подтвердил почту!</a>\n{user.first_name} Клиент #{user.name_id}'
-            )
-            return
+            return user, None
 
         counterparty_manager = await moysklad.get_counterparty_manager()
         counterparty_data = schemas_moysklad.CounterpartyCreate(
@@ -67,14 +68,36 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             moysklad_counterparty_id=counterparty["id"],
             moysklad_counterparty_meta=counterparty["meta"],
         )
-        await self.update(user_update_data, user, request=request)
-
-        notification_title = (
-            "Новый пользователь на сайте!"
-            if resolution.created
-            else "Пользователь связан с существующим контрагентом!"
+        updated_user = await self.update(
+            user_update_data,
+            user,
+            request=request,
         )
+        return updated_user, resolution
+
+    async def on_after_verify(self, user: User, request: Optional[Request] = None) -> None:
         try:
+            user, resolution = await self.ensure_moysklad_counterparty(
+                user,
+                request,
+            )
+        except Exception:
+            logger.exception("Failed to link verified user to MoySklad")
+            return
+
+        try:
+            if resolution is None:
+                await telegram_sender.send_group_message(
+                    f'<a href="{user.moysklad_counterparty_meta.get("uuidHref")}">Пользователь подтвердил почту!</a>\n{user.first_name} Клиент #{user.name_id}'
+                )
+                return
+
+            counterparty = resolution.counterparty
+            notification_title = (
+                "Новый пользователь на сайте!"
+                if resolution.created
+                else "Пользователь связан с существующим контрагентом!"
+            )
             await telegram_sender.send_group_message(
                 f'<a href="{counterparty["meta"]["uuidHref"]}">'
                 f"{notification_title}</a>\n"

@@ -97,12 +97,17 @@ External calls currently use synchronous `requests` in async request paths. They
 
 The JWT login endpoint stores bearer-token state through the Redis strategy. Protected REST routes resolve `current_user_dependency`. Verification/reset handlers store short-lived code-to-token mappings in Redis before sending email.
 
-After email verification, an unlinked user searches MoySklad counterparties by
-common exact representations of the normalized phone number. The backend
+Email verification commits the local identity state independently of external
+integrations. An unlinked verified user then searches MoySklad counterparties
+by common exact representations of the normalized phone number. The backend
 normalizes returned candidates again: one match is linked without modifying the
 counterparty, while zero or multiple matches create a new counterparty. Lookup
-errors never fall back to creation. The local `id` and `meta` are persisted
-before the Telegram side notification is attempted.
+errors never fall back to creation and are logged without turning successful
+email verification into a client error. `GET /users/updatedMe` retries a missing
+link for already verified users and returns the local user when MoySklad remains
+unavailable; its balance refresh is also best-effort so authentication stays
+available. The local MoySklad `id` and `meta` are persisted before the Telegram
+side notification is attempted.
 
 Checkout `POST /api_v1/orders` requires `address_id`, at least one valid item,
 and a UUID `Idempotency-Key`. The browser persists one key for a logical
