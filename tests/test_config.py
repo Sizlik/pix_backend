@@ -49,3 +49,10 @@ def test_blank_optional_chat_ids_are_treated_as_missing():
 
     assert settings.chat_id is None
     assert settings.help_chat_id is None
+
+
+def test_telegram_notification_timeout_is_positive_and_defaults_to_three_seconds():
+    assert Settings(_env_file=None).telegram_notification_timeout_seconds == 3.0
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, telegram_notification_timeout_seconds=0)

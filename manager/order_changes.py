@@ -215,6 +215,7 @@ class OrderChangesManager:
                 order=order, changed=False, notification_sent=None
             )
 
+        state_meta = await self._customer_orders.get_state_meta(TARGET_ORDER_STATUS)
         product_rows = OrderCreate(
             order_items=[
                 OrderItemCreate(link=item.link, count=item.count, comment=item.comment)
@@ -231,18 +232,18 @@ class OrderChangesManager:
             serialize_new_position(item, product)
             for item, product in zip(plan.new, products, strict=True)
         )
-        state_meta = await self._customer_orders.get_state_meta(TARGET_ORDER_STATUS)
         updated_order = await self._customer_orders.replace_positions_and_state(
             order_id, positions, state_meta
         )
 
         notification_sent = True
         try:
-            await self._notifier.send_group_message(
+            notification_result = await self._notifier.send_group_message(
                 format_order_change_message(updated_order, user, plan.summary)
             )
+            notification_sent = notification_result is not False
         except Exception:
-            logger.warning("Telegram order-change notification failed")
+            logger.warning("Telegram order-change notification failed", exc_info=True)
             notification_sent = False
         return OrderChangesResponse(
             order=updated_order,

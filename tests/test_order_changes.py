@@ -14,6 +14,7 @@ from db.schemas.orders import (
 )
 from errors import (
     InvalidOrderChanges,
+    MoySkladOrderStateMissing,
     OrderNotAccessible,
     OrderNotEditable,
     OrderVersionConflict,
@@ -152,16 +153,21 @@ def order_payload(
 
 
 class StubCustomerOrders:
-    def __init__(self, order=None, error=None):
+    def __init__(self, order=None, error=None, state_error=None):
         self.order = order or order_payload()
         self.error = error
+        self.state_error = state_error
         self.replacements = []
+        self.state_lookups = []
 
     async def get_order_by_id(self, order_id):
         return self.order
 
     async def get_state_meta(self, state_name):
         assert state_name == "Изменен клиентом"
+        self.state_lookups.append(state_name)
+        if self.state_error:
+            raise self.state_error
         return {"href": "https://api.moysklad.ru/state/changed"}
 
     async def replace_positions_and_state(self, order_id, positions, state_meta):
@@ -189,7 +195,8 @@ class StubProducts:
 
 
 class StubNotifier:
-    def __init__(self, error=None):
+    def __init__(self, result=True, error=None):
+        self.result = result
         self.error = error
         self.messages = []
 
@@ -197,6 +204,7 @@ class StubNotifier:
         if self.error:
             raise self.error
         self.messages.append(text)
+        return self.result
 
 
 def make_user():
@@ -276,6 +284,34 @@ async def test_manager_noop_does_not_change_state_create_products_or_notify():
 
 
 @pytest.mark.asyncio
+async def test_missing_target_state_is_detected_before_product_creation():
+    error = MoySkladOrderStateMissing("Изменен клиентом")
+    orders = StubCustomerOrders(state_error=error)
+    products = StubProducts()
+    notifier = StubNotifier()
+    request = OrderChangesRequest(
+        expected_updated=orders.order["updated"],
+        positions=[
+            ExistingOrderPositionChange(id=POSITION_1, count=1),
+            NewOrderPositionChange(
+                link="https://shop.example/new",
+                count=1,
+                comment="",
+            ),
+        ],
+    )
+
+    with pytest.raises(MoySkladOrderStateMissing):
+        await OrderChangesManager(orders, products, notifier).save_changes(
+            make_user(), orders.order["id"], request
+        )
+
+    assert products.orders == []
+    assert orders.replacements == []
+    assert notifier.messages == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("order", "expected_error"),
     [
@@ -336,6 +372,25 @@ async def test_moysklad_failure_skips_telegram_and_telegram_failure_returns_warn
     ).save_changes(make_user(), orders.order["id"], request)
     assert result.changed is True
     assert result.notification_sent is False
+
+
+@pytest.mark.asyncio
+async def test_false_notification_result_is_reported_after_saved_order_change():
+    request = OrderChangesRequest(
+        expected_updated="2026-08-10 12:00:00.000",
+        positions=[ExistingOrderPositionChange(id=POSITION_1, count=2)],
+    )
+    orders = StubCustomerOrders()
+
+    result = await OrderChangesManager(
+        orders,
+        StubProducts(),
+        StubNotifier(result=False),
+    ).save_changes(make_user(), orders.order["id"], request)
+
+    assert result.changed is True
+    assert result.notification_sent is False
+    assert len(orders.replacements) == 1
 
 
 @pytest.mark.asyncio

@@ -235,6 +235,7 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "RESET_PASSWORD_TOKEN_SECRET",
         "CORS_ORIGINS",
         "ENABLE_SCHEDULER",
+        "TELEGRAM_NOTIFICATION_TIMEOUT_SECONDS",
         "ENABLE_MOYSKLAD_ORDER_CHAT",
         "BOT_TOKEN",
         "CHAT_ID",
@@ -256,6 +257,7 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "PRIVOZ_PASSWORD",
         "MAILERSEND_TOKEN",
         "NEXT_PUBLIC_BACKEND_URL",
+        "NEXT_PUBLIC_ENABLE_MOYSKLAD_ORDER_CHAT",
         "PGADMIN_DEFAULT_EMAIL",
         "PGADMIN_DEFAULT_PASSWORD",
     }
@@ -281,12 +283,14 @@ def test_production_environment_template_is_complete_and_copy_safe():
 
     assert set(values) == expected_keys
     assert values["APP_ENV"] == "production"
+    assert values["TELEGRAM_NOTIFICATION_TIMEOUT_SECONDS"] == "3"
     assert values["ENABLE_MOYSKLAD_ORDER_CHAT"] == "false"
     assert values["MINIO_ENDPOINT"] == "localhost:9000"
     assert values["MINIO_BUCKET"] == "pix-order-chat"
     assert values["NEXT_PUBLIC_BACKEND_URL"] == (
         "https://pixlogistic.com/api_v1"
     )
+    assert values["NEXT_PUBLIC_ENABLE_MOYSKLAD_ORDER_CHAT"] == "false"
     assert all(values[key] == "" for key in blank_sensitive_keys)
     assert "MOYSKLAD_PASWORD" not in values
 

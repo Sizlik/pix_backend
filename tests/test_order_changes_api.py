@@ -6,7 +6,12 @@ from fastapi.testclient import TestClient
 from config import Settings
 from db.schemas.orders import OrderChangesResponse
 from dependecies.orders import get_order_changes_manager
-from errors import OrderNotAccessible, OrderNotEditable, OrderVersionConflict
+from errors import (
+    MoySkladOrderStateMissing,
+    OrderNotAccessible,
+    OrderNotEditable,
+    OrderVersionConflict,
+)
 from main import create_app
 from routes.users import current_user_dependency
 
@@ -87,6 +92,11 @@ def test_batch_endpoint_returns_typed_result_without_live_integrations():
         (OrderNotAccessible(), 404, "order_not_found"),
         (OrderNotEditable("Принят к исполнению"), 409, "order_not_editable"),
         (OrderVersionConflict(), 409, "order_version_conflict"),
+        (
+            MoySkladOrderStateMissing("Изменен клиентом"),
+            503,
+            "moysklad_order_state_missing",
+        ),
     ],
 )
 def test_batch_endpoint_maps_domain_errors(error, status_code, code):

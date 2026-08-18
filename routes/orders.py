@@ -5,7 +5,6 @@ from typing import Annotated
 import pandas as pd
 from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Response
 
-from bot.sender import telegram_sender
 from db.models.users import User
 from db.schemas.orders import (
     CheckoutOrderCreate,
@@ -25,6 +24,7 @@ from dependecies import (
 from errors import (
     IdempotencyKeyReused,
     InvalidOrderChanges,
+    MoySkladOrderStateMissing,
     OrderCreationIdempotencyUnavailable,
     OrderCreationInProgress,
     OrderNotAccessible,
@@ -40,6 +40,7 @@ from manager.order_changes import OrderChangesManager
 from manager.order_creation import OrderCreationManager
 from manager.orders import OrderActionsManager
 from manager.privoz_order import PrivozManager
+from manager.telegram_notifications import BestEffortGroupNotifier
 from routes.users import current_user_dependency
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -97,6 +98,14 @@ def order_change_http_error(exc: Exception) -> HTTPException:
         return HTTPException(
             409,
             detail={"code": "order_version_conflict", "message": "Order was updated"},
+        )
+    if isinstance(exc, MoySkladOrderStateMissing):
+        return HTTPException(
+            503,
+            detail={
+                "code": "moysklad_order_state_missing",
+                "message": "Order editing is temporarily unavailable",
+            },
         )
     return HTTPException(
         422,
@@ -169,9 +178,18 @@ async def export_pdf_invoice_out(
 
 
 @router.put("/state/{order_id}")
-async def change_order_state(order_id, user: User = Depends(current_user_dependency), customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager),):
+async def change_order_state(
+    order_id,
+    user: User = Depends(current_user_dependency),
+    customer_order_manager: CustomerOrderManager = Depends(
+        dependency_moysklad.get_customer_order_manager
+    ),
+    notifier: BestEffortGroupNotifier = Depends(
+        dependency_orders.get_order_notifier
+    ),
+):
     order = await customer_order_manager.change_state(order_id, "Подтвержден клиентом")
-    await telegram_sender.send_group_message(
+    await notifier.send_group_message(
         f'<a href="{order.get("meta").get("uuidHref")}">Заказ подтверждён</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
     return order
 
@@ -228,6 +246,7 @@ async def save_order_changes(
         OrderNotEditable,
         OrderVersionConflict,
         InvalidOrderChanges,
+        MoySkladOrderStateMissing,
     ) as exc:
         raise order_change_http_error(exc) from None
 
@@ -263,6 +282,7 @@ async def delete_order_position(
         OrderNotEditable,
         OrderVersionConflict,
         InvalidOrderChanges,
+        MoySkladOrderStateMissing,
     ) as exc:
         raise order_change_http_error(exc) from None
 
@@ -286,6 +306,7 @@ async def update_order_position_count(
         OrderNotEditable,
         OrderVersionConflict,
         InvalidOrderChanges,
+        MoySkladOrderStateMissing,
     ) as exc:
         raise order_change_http_error(exc) from None
 
@@ -306,6 +327,7 @@ async def add_order_positions(
         OrderNotEditable,
         OrderVersionConflict,
         InvalidOrderChanges,
+        MoySkladOrderStateMissing,
     ) as exc:
         raise order_change_http_error(exc) from None
 
@@ -314,10 +336,15 @@ async def add_order_positions(
 async def cancel_order(
         order_id: str,
         user: User = Depends(current_user_dependency),
-        customer_order_manager: CustomerOrderManager = Depends(dependency_moysklad.get_customer_order_manager)
+        customer_order_manager: CustomerOrderManager = Depends(
+            dependency_moysklad.get_customer_order_manager
+        ),
+        notifier: BestEffortGroupNotifier = Depends(
+            dependency_orders.get_order_notifier
+        ),
 ):
     order = await customer_order_manager.change_state(order_id, "Отменен")
-    await telegram_sender.send_group_message(f'<a href="{order.get("meta").get("uuidHref")}">Заказ отменён</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
+    await notifier.send_group_message(f'<a href="{order.get("meta").get("uuidHref")}">Заказ отменён</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
     return order
 
 

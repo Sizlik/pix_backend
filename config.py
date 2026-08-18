@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     enable_scheduler: bool = False
     enable_moysklad_order_chat: bool = False
+    telegram_notification_timeout_seconds: float = Field(3.0, gt=0)
 
     bot_token: SecretStr | None = None
     chat_id: int | None = None

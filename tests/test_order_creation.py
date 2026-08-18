@@ -101,14 +101,18 @@ class StubCustomerOrders:
 
 
 class StubNotifier:
-    def __init__(self, events, error=None):
+    def __init__(self, events, result=True, error=None):
         self.events = events
+        self.result = result
         self.error = error
+        self.messages = []
 
     async def send_group_message(self, message):
         self.events.append("notify")
+        self.messages.append(message)
         if self.error:
             raise self.error
+        return self.result
 
 
 class StubIdempotency:
@@ -209,6 +213,23 @@ async def test_secondary_failure_does_not_turn_created_order_into_failure(
     )
     result = await manager.create(make_request(), make_user(), IDEMPOTENCY_KEY)
     assert result["id"] == "moysklad-order"
+
+
+@pytest.mark.asyncio
+async def test_false_notification_result_does_not_turn_created_order_into_failure():
+    events = []
+    manager = OrderCreationManager(
+        StubAddresses(events),
+        StubProducts(events),
+        StubCustomerOrders(events),
+        StubIdempotency(),
+        StubNotifier(events, result=False),
+    )
+
+    result = await manager.create(make_request(), make_user(), IDEMPOTENCY_KEY)
+
+    assert result["id"] == "moysklad-order"
+    assert events[-1] == "notify"
 
 
 @pytest.mark.asyncio
