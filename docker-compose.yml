@@ -90,13 +90,6 @@ services:
 #      - ./html:/usr/share/nginx/html
 #    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
-  bot:
-    image: logistic_bot:latest
-    restart: always
-    env_file:
-      - .env
-
-
 volumes:
   pgadmin-data:
   pix-minio-data:

@@ -1,7 +1,6 @@
 import pytest
 import requests
 
-from bot.sender import Sender
 from config import Settings
 from db.repository import MoySkladRepository
 from errors import IntegrationNotConfigured
@@ -24,14 +23,6 @@ async def test_moysklad_requires_credentials_before_http(monkeypatch):
 
     with pytest.raises(IntegrationNotConfigured, match="moysklad"):
         await repository.get_default_company()
-
-
-@pytest.mark.asyncio
-async def test_telegram_requires_token_before_sending():
-    sender = Sender(settings_provider=missing_integration_settings)
-
-    with pytest.raises(IntegrationNotConfigured, match="telegram"):
-        await sender.send_group_message("test")
 
 
 def test_bitrix_requires_webhook_url_before_http(monkeypatch):

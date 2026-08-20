@@ -84,9 +84,6 @@ def test_order_chat_preflight_names_every_missing_runtime_dependency():
         "ENABLE_MOYSKLAD_ORDER_CHAT",
         "MOYSKLAD_LOGIN",
         "MOYSKLAD_PASSWORD",
-        "BOT_TOKEN",
-        "CHAT_ID",
-        "HELP_CHAT_ID",
         "MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET",
         "MINIO_ENDPOINT",
         "MINIO_ACCESS_KEY",
@@ -99,9 +96,6 @@ def test_order_chat_preflight_accepts_complete_host_network_configuration():
         enable_moysklad_order_chat=True,
         moysklad_login="account@example.com",
         moysklad_password="moysklad-api-token",
-        bot_token="123456789:telegram-bot-token",
-        chat_id=-1001234567890,
-        help_chat_id=-1009876543210,
         moysklad_order_chat_webhook_secret=(
             "order_chat_webhook_secret_0123456789ABCDEF"
         ),
@@ -121,8 +115,6 @@ def test_preflight_never_returns_secret_or_sensitive_values():
         "redis-secret-value",
         "moysklad-login-value",
         "moysklad-password-value",
-        "telegram-token-value",
-        "1234567890",
         "webhook/secret/value",
         "minio-access-value",
         "minio-secret-value",
@@ -139,9 +131,6 @@ def test_preflight_never_returns_secret_or_sensitive_values():
         enable_moysklad_order_chat=True,
         moysklad_login="moysklad-login-value",
         moysklad_password="moysklad-password-value",
-        bot_token="telegram-token-value",
-        chat_id=1234567890,
-        help_chat_id=1234567890,
         moysklad_order_chat_webhook_secret="webhook/secret/value",
         minio_endpoint="https://minio.invalid/path",
         minio_access_key="minio-access-value",
@@ -235,11 +224,7 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "RESET_PASSWORD_TOKEN_SECRET",
         "CORS_ORIGINS",
         "ENABLE_SCHEDULER",
-        "TELEGRAM_NOTIFICATION_TIMEOUT_SECONDS",
         "ENABLE_MOYSKLAD_ORDER_CHAT",
-        "BOT_TOKEN",
-        "CHAT_ID",
-        "HELP_CHAT_ID",
         "BITRIX_LINK",
         "MOYSKLAD_LOGIN",
         "MOYSKLAD_PASSWORD",
@@ -265,9 +250,6 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "POSTGRES_PASSWORD",
         "VERIFICATION_TOKEN_SECRET",
         "RESET_PASSWORD_TOKEN_SECRET",
-        "BOT_TOKEN",
-        "CHAT_ID",
-        "HELP_CHAT_ID",
         "BITRIX_LINK",
         "MOYSKLAD_LOGIN",
         "MOYSKLAD_PASSWORD",
@@ -283,7 +265,6 @@ def test_production_environment_template_is_complete_and_copy_safe():
 
     assert set(values) == expected_keys
     assert values["APP_ENV"] == "production"
-    assert values["TELEGRAM_NOTIFICATION_TIMEOUT_SECONDS"] == "3"
     assert values["ENABLE_MOYSKLAD_ORDER_CHAT"] == "false"
     assert values["MINIO_ENDPOINT"] == "localhost:9000"
     assert values["MINIO_BUCKET"] == "pix-order-chat"

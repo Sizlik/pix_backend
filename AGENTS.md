@@ -46,13 +46,14 @@ Do not claim success from an earlier run; execute the relevant command after the
 - Inspect the active database URL and migration before `alembic upgrade`, `downgrade`, or revision generation.
 - Treat production migration, data repair, volume deletion, and Compose volume removal as destructive operations requiring explicit approval and a recovery plan.
 - Do not use the generic SQLite upsert path as proof of PostgreSQL compatibility.
+- Revision `d4e5f6a7b8c9` removes obsolete messaging data and must follow its production runbook under `docs/operations/`; never apply it automatically.
 
 ## External Integrations and Secrets
 
 - Ordinary import, setup, tests, and local startup must not contact production services.
 - Missing optional integration values must fail through `IntegrationNotConfigured`; never add credential-bearing defaults.
 - Use `MOYSKLAD_PASSWORD`. `MOYSKLAD_PASWORD` exists only as a temporary legacy input alias.
-- Never print or commit `.env`, webhook URLs, tokens, passwords, chat IDs, or credential-bearing Git URLs.
+- Never print or commit `.env`, webhook URLs, tokens, passwords, external account identifiers, or credential-bearing Git URLs.
 - Keep `ENABLE_SCHEDULER=false` locally unless a deliberate integration test is approved.
 
 ## Cross-Repository Contract
@@ -60,7 +61,8 @@ Do not claim success from an earlier run; execute the relevant command after the
 - Public API prefix: `/api_v1`.
 - Liveness: `GET /api_v1/health`.
 - Browser API base comes from frontend `NEXT_PUBLIC_BACKEND_URL` at build time.
-- WebSocket endpoint: `/api_v1/chat/ws`; token and room semantics are shared with the frontend hook.
+- Chat is order-specific only. The WebSocket endpoint `/api_v1/chat/ws` requires both authentication and an order `room`; token and room semantics are shared with the frontend hook.
+- Preserve website notification types `ORDER_UPDATED` and `ORDER_MESSAGE`; there is no general-support chat API.
 - Coordinate backend schema/path changes with `../pix_frontend_v2/src/routes/routes.tsx` and browser tests.
 
 ## Source-of-Truth Documentation

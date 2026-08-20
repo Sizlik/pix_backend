@@ -27,9 +27,6 @@ must be supplied through the production secret store or ignored server `.env`.
 | `CORS_ORIGINS` | Backend | Yes | No | JSON array of origins | Allowed browser origins |
 | `ENABLE_SCHEDULER` | Backend | Yes | No | Boolean | Enables hourly external order-state synchronization |
 | `ENABLE_MOYSKLAD_ORDER_CHAT` | Backend | Yes | No | Boolean, default `false` | Enables order-chat runtime, MinIO, outbox, and webhook processing |
-| `BOT_TOKEN` | Telegram | If Telegram flows are enabled | Yes | Bot API token | Constructs the Telegram bot client |
-| `CHAT_ID` | Telegram | If group notifications are enabled | Sensitive | Integer chat ID | Destination for group/order messages |
-| `HELP_CHAT_ID` | Telegram | If support notifications are enabled | Sensitive | Integer chat ID | Destination for support messages |
 | `BITRIX_LINK` | Bitrix | If Bitrix endpoints are enabled | Yes | HTTPS webhook base URL | Authenticated Bitrix REST base |
 | `MOYSKLAD_LOGIN` | MoySklad | Yes for full product behavior | Sensitive | Account login | MoySklad Basic authentication |
 | `MOYSKLAD_PASSWORD` | MoySklad | Yes for full product behavior | Yes | Account password/token | MoySklad Basic authentication |
@@ -71,9 +68,6 @@ RESET_PASSWORD_TOKEN_SECRET=
 CORS_ORIGINS=
 ENABLE_SCHEDULER=
 ENABLE_MOYSKLAD_ORDER_CHAT=
-BOT_TOKEN=
-CHAT_ID=
-HELP_CHAT_ID=
 BITRIX_LINK=
 MOYSKLAD_LOGIN=
 MOYSKLAD_PASSWORD=
@@ -102,3 +96,8 @@ The GitHub deployment workflow separately consumes repository/action secrets nam
 `.env.example` contains only local-safe PostgreSQL, Redis, CORS, authentication, and MinIO development defaults. The order-chat feature flag is `false`, its webhook secret is blank, and all external credentials are blank. `APP_ENV=production` rejects the shipped local database and authentication secrets.
 
 The eleven order-chat settings are the feature flag, webhook secret, five MinIO/storage settings, two attachment limits, and two outbox retry settings listed above. Enabling the feature also requires the existing `MOYSKLAD_LOGIN` and correctly spelled `MOYSKLAD_PASSWORD`. `MOYSKLAD_PASWORD` remains a temporary legacy input alias only; never use it in a new environment.
+
+The order-chat production preflight has no notification-provider settings. It
+requires MoySklad, the webhook secret, MinIO, Redis, PostgreSQL, and the normal
+authentication/browser configuration. Website `ORDER_UPDATED` and
+`ORDER_MESSAGE` notifications use PostgreSQL and Redis.

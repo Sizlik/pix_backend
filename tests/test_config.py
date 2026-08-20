@@ -40,19 +40,10 @@ def test_missing_integration_value_is_sanitized():
         require_value(None, "moysklad")
 
 
-def test_blank_optional_chat_ids_are_treated_as_missing():
-    settings = Settings(
-        _env_file=None,
-        chat_id="",
-        help_chat_id="",
-    )
+def test_settings_have_no_telegram_fields():
+    fields = Settings.model_fields
 
-    assert settings.chat_id is None
-    assert settings.help_chat_id is None
-
-
-def test_telegram_notification_timeout_is_positive_and_defaults_to_three_seconds():
-    assert Settings(_env_file=None).telegram_notification_timeout_seconds == 3.0
-
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, telegram_notification_timeout_seconds=0)
+    assert "bot_token" not in fields
+    assert "chat_id" not in fields
+    assert "help_chat_id" not in fields
+    assert "telegram_notification_timeout_seconds" not in fields

@@ -3,7 +3,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import quote_plus
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from errors import IntegrationNotConfigured
@@ -49,11 +49,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     enable_scheduler: bool = False
     enable_moysklad_order_chat: bool = False
-    telegram_notification_timeout_seconds: float = Field(3.0, gt=0)
 
-    bot_token: SecretStr | None = None
-    chat_id: int | None = None
-    help_chat_id: int | None = None
     bitrix_link: SecretStr | None = None
     moysklad_login: str | None = None
     moysklad_password: SecretStr | None = Field(
@@ -79,11 +75,6 @@ class Settings(BaseSettings):
     chat_attachment_max_count: int = Field(10, gt=0)
     chat_outbox_max_attempts: int = Field(8, gt=0)
     chat_outbox_base_delay_seconds: int = Field(5, gt=0)
-
-    @field_validator("chat_id", "help_chat_id", mode="before")
-    @classmethod
-    def blank_optional_ids_are_none(cls, value):
-        return None if value == "" else value
 
     @property
     def database_url(self) -> str:

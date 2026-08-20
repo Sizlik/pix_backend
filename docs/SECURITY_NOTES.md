@@ -15,12 +15,12 @@ Do not test old credentials to determine whether they still work. Do not rewrite
 ## Secret boundaries
 
 - Never store secrets in `AGENTS.md`, README files, committed environment files, frontend `NEXT_PUBLIC_*` variables, URLs, screenshots, test fixtures, exception messages, or logs.
-- Treat Bitrix webhook URLs, Redis URLs with passwords, Telegram chat IDs, account names, and deployment host/user data as sensitive even when they are not conventional passwords.
+- Treat Bitrix webhook URLs, Redis URLs with passwords, external account names, and deployment host/user data as sensitive even when they are not conventional passwords.
 - `.env`, `.env.local`, `.venv`, build output, Playwright artifacts, and local logs must remain ignored.
 - Browser code is public. `NEXT_PUBLIC_BACKEND_URL` may contain only a public API base, never credentials or private network tokens.
 - Missing integration configuration must produce a sanitized `IntegrationNotConfigured` error and HTTP 503.
 - `MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET` is embedded in a URL path. NGINX disables access logging for only that exact prefix, registration output redacts the final segment, and application code must never log the unredacted request target. Rotate it by deploying a new secret, restarting, registering the new exact URL, and deleting only the old webhook after explicit approval.
-- MinIO access and secret keys belong only in the backend/container secret store. Never expose them through `NEXT_PUBLIC_*`, browser object URLs, MoySklad comments, filenames, or support messages.
+- MinIO access and secret keys belong only in the backend/container secret store. Never expose them through `NEXT_PUBLIC_*`, browser object URLs, MoySklad comments, filenames, or order-chat messages.
 
 ## Runtime trust boundaries
 
@@ -37,6 +37,7 @@ Do not test old credentials to determine whether they still work. Do not rewrite
 - Attachments are limited to ten files and 20 MiB each. Filename extensions and byte signatures are checked server-side for the allowlist; browser checks are usability only. Stored object keys do not trust the original filename.
 - Only text below the manager reply marker and MoySklad files prefixed `[КЛИЕНТ]` are client-visible. Other manager files remain internal.
 - PostgreSQL and the MinIO volume must be backed up and restored as one retention set. A database-only restore can leave attachment metadata without bytes; a volume-only restore loses ownership and immutable-history links.
+- Revision `d4e5f6a7b8c9` deletes obsolete messaging rows, tables, and identity values. It must be applied manually only after the backup has been restored successfully in isolation; its downgrade recreates empty compatibility structures and cannot recover deleted values. Follow its production runbook under `docs/operations/`.
 
 ## Dependency and deployment observations
 

@@ -1,6 +1,6 @@
 # Pix Logistic Backend
 
-FastAPI service for authentication, users, orders, payments, organizations, notifications, support chat, and integrations with MoySklad, Bitrix, Privoz, Telegram, and email delivery.
+FastAPI service for authentication, users, orders, payments, organizations, website notifications, order-specific chat, and integrations with MoySklad, Bitrix, Privoz, and email delivery.
 
 ## Local quick start
 
@@ -30,11 +30,13 @@ The frontend lives in the adjacent `../pix_frontend_v2` checkout and defaults to
 
 External integrations are lazy: an endpoint that needs an unconfigured integration returns a sanitized service-unavailable error rather than breaking application startup.
 
-The order-only chat stores immutable history in PostgreSQL and attachments in MinIO, mirrors client messages to MoySklad customer-order comments/files, and keeps Telegram as a side notification channel. See the architecture, environment, local-development, and security documents above before enabling it or registering its webhook.
+Email verification links the verified account to its MoySklad counterparty without a side notification. Website `ORDER_UPDATED` and `ORDER_MESSAGE` notifications remain active. The order-only chat stores immutable history in PostgreSQL and attachments in MinIO, mirrors client messages to MoySklad customer-order comments/files, and publishes browser updates through Redis-backed WebSockets. There is no general-support chat or `/bot` router.
 
 Production preparation starts from `.env.production.example`. Merge only
 missing keys into the existing ignored server `.env`, leave the feature flag
 off for the first deployment, and run
 `python scripts/check_production_config.py` before any container update. The
 manual migration, feature enablement and webhook registration checkpoints are
-documented in `docs/LOCAL_DEVELOPMENT.md`.
+documented in `docs/LOCAL_DEVELOPMENT.md`. The destructive removal revision
+`d4e5f6a7b8c9` is manual and requires the validated backup and checks in the
+production removal runbook under `docs/operations/`.
