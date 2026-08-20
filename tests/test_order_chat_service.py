@@ -61,9 +61,6 @@ class FakeRepository:
     async def ensure_state(self, order_id, client_id):
         return None
 
-    async def import_legacy_messages(self, order_id, client_id):
-        return 0
-
     async def create_message(self, **values):
         if self.fail:
             raise RuntimeError("database unavailable")
@@ -126,7 +123,7 @@ async def test_access_policy_hides_another_clients_order():
         await service.list_messages(UserStub(), ORDER_ID, before=None, limit=50)
 
 
-async def test_file_only_message_stores_two_events_and_returns_generic_sender():
+async def test_file_only_message_stores_sync_event_and_returns_generic_sender():
     service, repository, storage = make_service()
 
     result = await service.create_client_message(
@@ -139,10 +136,8 @@ async def test_file_only_message_stores_two_events_and_returns_generic_sender():
     assert result.message == ""
     assert result.sender_label == "Клиент"
     assert len(result.attachments) == 1
-    assert {event.event_type for event in repository.events} == {
-        "sync_order",
-        "telegram_client_alert",
-    }
+    assert [event.event_type for event in repository.events] == ["sync_order"]
+    assert repository.events[0].dedup_key == f"sync_order:{result.id}"
     assert len(storage.objects) == 1
 
 

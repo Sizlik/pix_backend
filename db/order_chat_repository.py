@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from db.models.chat import Message
 from db.models.notifications import Notifications
 from db.models.order_chat import (
     ChatOutboxEvent,
@@ -164,55 +163,6 @@ class OrderChatRepository:
                 .where(OrderChatState.order_id == order_id)
             )
             return result.scalar_one_or_none()
-
-    async def import_legacy_messages(self, order_id: UUID, client_id: UUID) -> int:
-        async with self._session_factory() as session:
-            async with session.begin():
-                result = await session.execute(
-                    select(Message, User)
-                    .outerjoin(User, User.id == Message.from_user_id)
-                    .where(Message.to_chat_room_id == order_id)
-                    .order_by(Message.time_created, Message.id)
-                )
-                values = []
-                for message, author in result.all():
-                    sender_kind = (
-                        "manager" if author is not None and author.email == "bot@pixlogistic.com" else "client"
-                    )
-                    values.append(
-                        {
-                            "id": uuid4(),
-                            "order_id": order_id,
-                            "client_id": client_id,
-                            "sender_kind": sender_kind,
-                            "source": "legacy",
-                            "body": message.message,
-                            "legacy_message_id": message.id,
-                            "created_at": message.time_created,
-                        }
-                    )
-                if not values:
-                    return 0
-                inserted = await session.execute(
-                    pg_insert(OrderChatMessage)
-                    .values(values)
-                    .on_conflict_do_nothing(index_elements=["legacy_message_id"])
-                    .returning(OrderChatMessage.id)
-                )
-                inserted_ids = tuple(inserted.scalars())
-                if inserted_ids:
-                    await self._insert_outbox_events(
-                        session,
-                        (
-                            NewOutboxEvent(
-                                event_type="sync_order",
-                                order_id=order_id,
-                                dedup_key=f"sync_legacy:{order_id}",
-                                payload={},
-                            ),
-                        ),
-                    )
-                return len(inserted_ids)
 
     async def create_message(
         self,

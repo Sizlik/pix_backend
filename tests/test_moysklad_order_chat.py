@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
@@ -321,19 +322,24 @@ async def test_manager_reply_and_prefixed_file_create_one_immutable_message():
     assert message.body == "Отправили ваш заказ"
     assert message.attachments[0].original_filename == "фото.jpg"
     assert repository.notifications == [message.id]
-    assert repository.events[-1].dedup_key == f"telegram_manager:{message.id}"
+    assert repository.events == []
     assert len(storage.objects) == 1
     assert moysklad.description.endswith(REPLY_PROMPT)
 
 
-async def test_missing_reply_marker_alerts_staff_and_restores_description():
+async def test_missing_reply_marker_logs_code_and_restores_description(caplog):
     synchronizer, repository, moysklad, _, _ = inbound_fixture()
     moysklad.description = "случайно переписанный комментарий"
 
-    await synchronizer.process_moysklad_update(inbound_event("bad-marker"))
+    with caplog.at_level(logging.WARNING):
+        await synchronizer.process_moysklad_update(inbound_event("bad-marker"))
 
     assert len(repository.messages) == 1
-    assert repository.events[-1].event_type == "telegram_projection_error"
+    assert repository.events == []
+    assert "order_chat_projection_rejected" in caplog.text
+    assert str(ORDER_ID) in caplog.text
+    assert "malformed_comment" in caplog.text
+    assert "случайно переписанный комментарий" not in caplog.text
     assert moysklad.description.endswith(REPLY_PROMPT)
 
 
@@ -365,7 +371,7 @@ async def test_replayed_audit_does_not_duplicate_manager_message():
     assert [item.body for item in repository.messages[1:]] == ["Принято"]
 
 
-async def test_invalid_public_batch_is_all_or_nothing_and_keeps_reply():
+async def test_invalid_public_batch_is_all_or_nothing_and_keeps_reply(caplog):
     synchronizer, repository, moysklad, storage, canonical = inbound_fixture()
     moysklad.description = canonical + "\nФайлы"
     moysklad.files = [
@@ -378,9 +384,12 @@ async def test_invalid_public_batch_is_all_or_nothing_and_keeps_reply():
         for index in range(1, 12)
     ]
 
-    await synchronizer.process_moysklad_update(inbound_event("too-many"))
+    with caplog.at_level(logging.WARNING):
+        await synchronizer.process_moysklad_update(inbound_event("too-many"))
 
     assert len(repository.messages) == 1
     assert storage.objects == {}
-    assert repository.events[-1].event_type == "telegram_projection_error"
+    assert repository.events == []
+    assert "order_chat_projection_rejected" in caplog.text
+    assert "manager_file_count" in caplog.text
     assert moysklad.description.endswith("Файлы")

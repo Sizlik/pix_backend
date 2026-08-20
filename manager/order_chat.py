@@ -94,7 +94,7 @@ class OrderChatService:
         body: str,
         uploads: list[PendingUpload],
     ) -> OrderChatMessageResponse:
-        order = await self._prepare_order(user, order_id)
+        await self._prepare_order(user, order_id)
         normalized_body = body.strip()
         if not normalized_body and not uploads:
             raise EmptyOrderChatMessage()
@@ -131,18 +131,6 @@ class OrderChatService:
                     order_id=order_id,
                     dedup_key=f"sync_order:{message_id}",
                     payload={"message_id": str(message_id)},
-                ),
-                NewOutboxEvent(
-                    event_type="telegram_client_alert",
-                    order_id=order_id,
-                    dedup_key=f"telegram_client:{message_id}",
-                    payload={
-                        "message_id": str(message_id),
-                        "order_name": order.get("name", str(order_id)),
-                        "client_name": user.first_name,
-                        "client_number": user.name_id,
-                        "filenames": [upload.filename for upload in validated],
-                    },
                 ),
             )
             stored = await self._repository.create_message(
@@ -185,7 +173,6 @@ class OrderChatService:
             await self._repository.ensure_state(order_id, user.id)
         except LookupError:
             raise OrderChatNotFound() from None
-        await self._repository.import_legacy_messages(order_id, user.id)
         return order
 
     async def _response(self, message: StoredMessage) -> OrderChatMessageResponse:

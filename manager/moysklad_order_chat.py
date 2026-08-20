@@ -1,3 +1,4 @@
+import logging
 from hashlib import sha256
 from uuid import UUID, uuid4
 
@@ -5,7 +6,6 @@ from db.moysklad_order_chat_repository import MoySkladUpload
 from db.order_chat_repository import (
     NewAttachment,
     NewMoySkladOrderFile,
-    NewOutboxEvent,
 )
 from manager.chat_files import ChatFileRejected, validate_upload_batch
 from manager.order_chat_format import (
@@ -22,6 +22,9 @@ from manager.order_chat_format import (
     manager_public_filename,
     render_order_comment,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class MoySkladOrderChatSynchronizer:
@@ -142,17 +145,7 @@ class MoySkladOrderChatSynchronizer:
                 body=reply,
                 external_key=external_key,
                 attachments=tuple(attachments),
-                outbox_events=(
-                    NewOutboxEvent(
-                        event_type="telegram_manager_alert",
-                        order_id=order_id,
-                        dedup_key=f"telegram_manager:{message_id}",
-                        payload={
-                            "message_id": str(message_id),
-                            "order_name": order.get("name", str(order_id)),
-                        },
-                    ),
-                ),
+                outbox_events=(),
                 moysklad_files=tuple(
                     NewMoySkladOrderFile(
                         order_id=order_id,
@@ -372,15 +365,9 @@ class MoySkladOrderChatSynchronizer:
         return uploaded.id
 
     async def _projection_error(self, order_id, code: str, identity: str = "") -> None:
-        if not hasattr(self._repository, "enqueue_events"):
-            return
-        await self._repository.enqueue_events(
-            (
-                NewOutboxEvent(
-                    event_type="telegram_projection_error",
-                    order_id=order_id,
-                    dedup_key=(f"projection_error:{order_id}:{code}:{identity}"),
-                    payload={"code": code},
-                ),
-            )
+        logger.warning(
+            "order_chat_projection_rejected order_id=%s code=%s event_identity=%s",
+            order_id,
+            code,
+            identity[:128],
         )

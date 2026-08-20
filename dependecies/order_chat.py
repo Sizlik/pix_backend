@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
 
-from bot.sender import telegram_sender
 from config import Settings, get_settings
 from db.moysklad_order_chat_repository import (
     MoySkladOrderChatRepository,
@@ -9,10 +8,7 @@ from db.moysklad_order_chat_repository import (
 from db.order_chat_repository import OrderChatRepository
 from dependecies.chat import get_chat_realtime
 from dependecies.notifications import build_notification_manager
-from manager.chat_outbox import (
-    OrderChatOutboxWorker,
-    OrderChatTelegramHandlers,
-)
+from manager.chat_outbox import OrderChatOutboxWorker
 from manager.chat_storage import MinioObjectStorage
 from manager.moysklad_order_chat import MoySkladOrderChatSynchronizer
 from manager.order_chat import OrderChatAccessPolicy, OrderChatService
@@ -90,16 +86,12 @@ def get_order_chat_runtime(settings: Settings, realtime=None) -> OrderChatRuntim
         realtime=realtime,
         notification_manager=build_notification_manager(),
     )
-    telegram_handlers = OrderChatTelegramHandlers(repository, telegram_sender)
     worker = OrderChatOutboxWorker(
         repository=repository,
         order_lock=repository.order_lock,
         handlers={
             "sync_order": lambda event: synchronizer.sync_order(event.order_id),
-            "telegram_client_alert": telegram_handlers.client_alert,
             "process_moysklad_update": synchronizer.process_moysklad_update,
-            "telegram_manager_alert": telegram_handlers.manager_alert,
-            "telegram_projection_error": telegram_handlers.projection_error,
         },
         max_attempts=chat_settings.outbox_max_attempts,
         base_delay_seconds=chat_settings.outbox_base_delay_seconds,

@@ -1,7 +1,6 @@
 import asyncio
 import inspect
 from collections.abc import Callable
-from uuid import UUID
 
 
 class OrderChatOutboxWorker:
@@ -23,6 +22,10 @@ class OrderChatOutboxWorker:
         self._realtime = realtime
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
+
+    @property
+    def handler_names(self) -> frozenset[str]:
+        return frozenset(self._handlers)
 
     async def start(self) -> None:
         if self._task is not None:
@@ -103,41 +106,3 @@ class OrderChatOutboxWorker:
                     pass
             else:
                 await asyncio.sleep(0)
-
-
-class OrderChatTelegramHandlers:
-    def __init__(self, repository, sender):
-        self._repository = repository
-        self._sender = sender
-
-    async def client_alert(self, event) -> None:
-        message = await self._repository.get_message(UUID(event.payload["message_id"]))
-        if message is None:
-            return
-        await self._sender.send_order_client_alert(
-            order_id=str(event.order_id),
-            order_name=str(event.payload.get("order_name", event.order_id)),
-            client_name=str(event.payload.get("client_name", "Клиент")),
-            client_number=int(event.payload.get("client_number", 0)),
-            text=message.body,
-            filenames=[attachment.original_filename for attachment in message.attachments],
-        )
-
-    async def manager_alert(self, event) -> None:
-        message = await self._repository.get_message(UUID(event.payload["message_id"]))
-        client = await self._repository.get_state_client(event.order_id)
-        if message is None or client is None or not client.telegram_id:
-            return
-        await self._sender.send_order_manager_alert(
-            client.telegram_id,
-            order_id=str(event.order_id),
-            order_name=str(event.payload.get("order_name", event.order_id)),
-            text=message.body,
-            filenames=[item.original_filename for item in message.attachments],
-        )
-
-    async def projection_error(self, event) -> None:
-        await self._sender.send_order_projection_error(
-            order_id=str(event.order_id),
-            code=str(event.payload.get("code", "projection_error")),
-        )
