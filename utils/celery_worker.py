@@ -1,6 +1,5 @@
 import json
 
-from bot.sender import telegram_sender
 from db.models.users import User, UserDatabase
 from db.postgres import async_session_maker
 from db.schemas.notifications import NotificationCreate, NotificationTypes
@@ -47,12 +46,15 @@ async def change_states_on_moysklad():
                     try:
                         user = await UserDatabase(session, User).get_by_moysklad(
                             order.get("agent", {}).get("meta", {}).get("href", "").split("/")[-1])
-                        if user and user.telegram_id:
-                            await telegram_sender.send_user_message(user.telegram_id, f"<a href='https://client.pixlogistic.com/dashboard/orders/{order.get('id')}'>Заказ #{order.get('name')}</a> изменил статус на <b>{privoz_order.state}</b>")
-                        notification_data = NotificationCreate(user_id=str(user.id),
-                                                               type=NotificationTypes.ORDER_UPDATED.value,
-                                                               object_id=str(order.get("id")))
-                        await notification_manager.create_notification(notification_data)
+                        if user is not None:
+                            notification_data = NotificationCreate(
+                                user_id=str(user.id),
+                                type=NotificationTypes.ORDER_UPDATED,
+                                object_id=str(order.get("id")),
+                            )
+                            await notification_manager.create_notification(
+                                notification_data
+                            )
                     except Exception as e:
                         print(e)
 
