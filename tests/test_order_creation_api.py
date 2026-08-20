@@ -171,15 +171,6 @@ class StubCustomerOrderManager:
         }
 
 
-class UnavailableNotifier:
-    def __init__(self):
-        self.messages = []
-
-    async def send_group_message(self, text):
-        self.messages.append(text)
-        return False
-
-
 @pytest.mark.parametrize(
     ("method", "path", "expected_state"),
     [
@@ -187,21 +178,17 @@ class UnavailableNotifier:
         ("delete", "/api_v1/orders/order-id", "Отменен"),
     ],
 )
-def test_completed_state_changes_ignore_unavailable_telegram(
+def test_completed_state_changes_return_moysklad_result(
     method, path, expected_state
 ):
     app = create_app(Settings(_env_file=None, app_env="test"))
     user = SimpleNamespace(first_name="Иван", name_id=7)
-    notifier = UnavailableNotifier()
     app.dependency_overrides[current_user_dependency] = lambda: user
     app.dependency_overrides[
         dependency_moysklad.get_customer_order_manager
     ] = StubCustomerOrderManager
-    app.dependency_overrides[dependency_orders.get_order_notifier] = lambda: notifier
-
     with TestClient(app) as client:
         response = client.request(method, path)
 
     assert response.status_code == 200
     assert response.json()["state"]["name"] == expected_state
-    assert len(notifier.messages) == 1

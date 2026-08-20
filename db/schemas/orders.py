@@ -107,4 +107,3 @@ class OrderChangesRequest(BaseModel):
 class OrderChangesResponse(BaseModel):
     order: dict
     changed: bool
-    notification_sent: bool | None

@@ -40,7 +40,6 @@ from manager.order_changes import OrderChangesManager
 from manager.order_creation import OrderCreationManager
 from manager.orders import OrderActionsManager
 from manager.privoz_order import PrivozManager
-from manager.telegram_notifications import BestEffortGroupNotifier
 from routes.users import current_user_dependency
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -184,13 +183,8 @@ async def change_order_state(
     customer_order_manager: CustomerOrderManager = Depends(
         dependency_moysklad.get_customer_order_manager
     ),
-    notifier: BestEffortGroupNotifier = Depends(
-        dependency_orders.get_order_notifier
-    ),
 ):
     order = await customer_order_manager.change_state(order_id, "Подтвержден клиентом")
-    await notifier.send_group_message(
-        f'<a href="{order.get("meta").get("uuidHref")}">Заказ подтверждён</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
     return order
 
 
@@ -339,12 +333,8 @@ async def cancel_order(
         customer_order_manager: CustomerOrderManager = Depends(
             dependency_moysklad.get_customer_order_manager
         ),
-        notifier: BestEffortGroupNotifier = Depends(
-            dependency_orders.get_order_notifier
-        ),
 ):
     order = await customer_order_manager.change_state(order_id, "Отменен")
-    await notifier.send_group_message(f'<a href="{order.get("meta").get("uuidHref")}">Заказ отменён</a>\nПользователь: {user.first_name} Клиент #{user.name_id}')
     return order
 
 

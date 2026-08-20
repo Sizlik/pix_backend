@@ -6,11 +6,7 @@ import pytest
 from db.schemas.orders import CheckoutOrderCreate
 from errors import AddressNotFound
 from manager.addresses import DeliveryAddressSnapshot
-from manager.order_creation import (
-    OrderCreationManager,
-    build_new_order_message,
-    checkout_fingerprint,
-)
+from manager.order_creation import OrderCreationManager, checkout_fingerprint
 
 ADDRESS_ID = UUID("00000000-0000-0000-0000-000000000010")
 IDEMPOTENCY_KEY = UUID("00000000-0000-0000-0000-000000000020")
@@ -100,21 +96,6 @@ class StubCustomerOrders:
         }
 
 
-class StubNotifier:
-    def __init__(self, events, result=True, error=None):
-        self.events = events
-        self.result = result
-        self.error = error
-        self.messages = []
-
-    async def send_group_message(self, message):
-        self.events.append("notify")
-        self.messages.append(message)
-        if self.error:
-            raise self.error
-        return self.result
-
-
 class StubIdempotency:
     def __init__(self, cached=None):
         self.cached = cached
@@ -133,13 +114,11 @@ async def test_order_creation_validates_address_before_products_and_marks_only_a
     addresses = StubAddresses(events)
     products = StubProducts(events)
     orders = StubCustomerOrders(events)
-    notifier = StubNotifier(events)
     result = await OrderCreationManager(
         addresses,
         products,
         orders,
         StubIdempotency(),
-        notifier,
     ).create(make_request(), make_user(), IDEMPOTENCY_KEY)
     assert result["id"] == "moysklad-order"
     assert events == [
@@ -147,7 +126,6 @@ async def test_order_creation_validates_address_before_products_and_marks_only_a
         "products:create",
         "order:create",
         "address:mark",
-        "notify",
     ]
     assert orders.arguments[0] == [
         {"count": 2, "moysklad_product_meta": {"href": "product-meta"}}
@@ -162,7 +140,6 @@ async def test_address_failure_stops_before_products_and_order():
         StubProducts(events),
         StubCustomerOrders(events),
         StubIdempotency(),
-        StubNotifier(events),
     )
     with pytest.raises(AddressNotFound):
         await manager.create(make_request(), make_user(), IDEMPOTENCY_KEY)
@@ -171,7 +148,7 @@ async def test_address_failure_stops_before_products_and_order():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failing_stage", ["products", "order"])
-async def test_external_failure_does_not_mark_or_notify(failing_stage):
+async def test_external_failure_does_not_mark_address(failing_stage):
     events = []
     error = RuntimeError("external unavailable")
     products = StubProducts(
@@ -185,51 +162,24 @@ async def test_external_failure_does_not_mark_or_notify(failing_stage):
         products,
         orders,
         StubIdempotency(),
-        StubNotifier(events),
     )
     with pytest.raises(RuntimeError):
         await manager.create(make_request(), make_user(), IDEMPOTENCY_KEY)
     assert "address:mark" not in events
-    assert "notify" not in events
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("secondary_failure", ["mark", "notify"])
-async def test_secondary_failure_does_not_turn_created_order_into_failure(
-    secondary_failure,
-):
+async def test_address_mark_failure_does_not_turn_created_order_into_failure():
     events = []
     error = RuntimeError("secondary unavailable")
     manager = OrderCreationManager(
-        StubAddresses(
-            events, mark_error=error if secondary_failure == "mark" else None
-        ),
+        StubAddresses(events, mark_error=error),
         StubProducts(events),
         StubCustomerOrders(events),
         StubIdempotency(),
-        StubNotifier(
-            events, error=error if secondary_failure == "notify" else None
-        ),
     )
     result = await manager.create(make_request(), make_user(), IDEMPOTENCY_KEY)
     assert result["id"] == "moysklad-order"
-
-
-@pytest.mark.asyncio
-async def test_false_notification_result_does_not_turn_created_order_into_failure():
-    events = []
-    manager = OrderCreationManager(
-        StubAddresses(events),
-        StubProducts(events),
-        StubCustomerOrders(events),
-        StubIdempotency(),
-        StubNotifier(events, result=False),
-    )
-
-    result = await manager.create(make_request(), make_user(), IDEMPOTENCY_KEY)
-
-    assert result["id"] == "moysklad-order"
-    assert events[-1] == "notify"
 
 
 @pytest.mark.asyncio
@@ -244,7 +194,6 @@ async def test_completed_retry_returns_cached_order_without_any_side_effect():
         StubProducts(events),
         StubCustomerOrders(events),
         StubIdempotency(cached=cached),
-        StubNotifier(events),
     )
 
     assert await manager.create(
@@ -264,7 +213,6 @@ async def test_checkout_passes_stable_sync_ids_to_both_moysklad_stages():
         products,
         orders,
         idempotency,
-        StubNotifier(events),
     )
 
     await manager.create(make_request(), make_user(), IDEMPOTENCY_KEY)
@@ -288,13 +236,3 @@ def test_checkout_fingerprint_changes_with_address_or_item_data():
 
     assert checkout_fingerprint(original) == checkout_fingerprint(make_request())
     assert checkout_fingerprint(original) != checkout_fingerprint(changed)
-
-
-def test_order_notification_escapes_user_name():
-    user = SimpleNamespace(first_name="<Иван>", name_id=7)
-    message = build_new_order_message(
-        {"meta": {"uuidHref": "https://moysklad/order"}}, user
-    )
-    assert "&lt;Иван&gt;" in message
-    assert "<Иван>" not in message
-    assert 'href="https://moysklad/order"' in message

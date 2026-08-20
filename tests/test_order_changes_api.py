@@ -24,7 +24,6 @@ class StubOrderChangesManager:
         self.result = result or OrderChangesResponse(
             order={"id": ORDER_ID, "state": {"name": "Изменен клиентом"}},
             changed=True,
-            notification_sent=True,
         )
         self.error = error
         self.calls = []
@@ -81,7 +80,8 @@ def test_batch_endpoint_returns_typed_result_without_live_integrations():
         )
 
     assert response.status_code == 200
-    assert response.json()["notification_sent"] is True
+    assert set(response.json()) == {"order", "changed"}
+    assert response.json()["changed"] is True
     assert manager.calls[0][0] is user
     assert manager.calls[0][1] == ORDER_ID
 

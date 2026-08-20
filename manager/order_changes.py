@@ -1,6 +1,4 @@
-import logging
 from dataclasses import dataclass
-from html import escape
 from typing import Protocol
 
 from db.models.users import User
@@ -19,8 +17,6 @@ from errors import (
     OrderNotEditable,
     OrderVersionConflict,
 )
-
-logger = logging.getLogger(__name__)
 
 EDITABLE_ORDER_STATUSES = frozenset(
     {
@@ -111,10 +107,6 @@ class ProductGateway(Protocol):
     async def create_products(self, order: OrderCreate, user: User) -> list[dict]: ...
 
 
-class GroupNotifier(Protocol):
-    async def send_group_message(self, text: str) -> None: ...
-
-
 def serialize_existing_position(item: ExistingPositionUpdate) -> dict:
     row = item.server_position
     result = {
@@ -145,22 +137,6 @@ def serialize_new_position(item: NewOrderPositionChange, product: dict) -> dict:
     }
 
 
-def format_order_change_message(
-    order: dict, user: User, summary: OrderChangeSummary
-) -> str:
-    href = escape(order["meta"]["uuidHref"], quote=True)
-    order_name = escape(str(order.get("name", order["id"])))
-    first_name = escape(str(user.first_name))
-    return (
-        f'<a href="{href}">Заказ #{order_name}</a> изменён клиентом\n'
-        f"Пользователь: {first_name} Клиент #{user.name_id}\n"
-        f"Добавлено: {summary.added}\n"
-        f"Удалено: {summary.removed}\n"
-        f"Количество изменено: {summary.quantity_changed}\n"
-        f"Статус: <b>{TARGET_ORDER_STATUS}</b>"
-    )
-
-
 def _existing_request_rows(order: dict) -> list[ExistingOrderPositionChange]:
     return [
         ExistingOrderPositionChange(id=row["id"], count=int(row["quantity"]))
@@ -173,11 +149,9 @@ class OrderChangesManager:
         self,
         customer_orders: CustomerOrderGateway,
         products: ProductGateway,
-        notifier: GroupNotifier,
     ) -> None:
         self._customer_orders = customer_orders
         self._products = products
-        self._notifier = notifier
 
     @staticmethod
     def _validate_context(order: dict, user: User, expected_updated: str) -> None:
@@ -211,9 +185,7 @@ class OrderChangesManager:
         self._validate_context(order, user, request.expected_updated)
         plan = build_order_change_plan(order["positions"]["rows"], request.positions)
         if not plan.summary.changed:
-            return OrderChangesResponse(
-                order=order, changed=False, notification_sent=None
-            )
+            return OrderChangesResponse(order=order, changed=False)
 
         state_meta = await self._customer_orders.get_state_meta(TARGET_ORDER_STATUS)
         product_rows = OrderCreate(
@@ -236,19 +208,9 @@ class OrderChangesManager:
             order_id, positions, state_meta
         )
 
-        notification_sent = True
-        try:
-            notification_result = await self._notifier.send_group_message(
-                format_order_change_message(updated_order, user, plan.summary)
-            )
-            notification_sent = notification_result is not False
-        except Exception:
-            logger.warning("Telegram order-change notification failed", exc_info=True)
-            notification_sent = False
         return OrderChangesResponse(
             order=updated_order,
             changed=True,
-            notification_sent=notification_sent,
         )
 
     async def _load_for_legacy_change(self, user: User, order_id) -> dict:

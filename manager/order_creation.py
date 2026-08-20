@@ -1,5 +1,4 @@
 import hashlib
-import html
 import json
 import logging
 from uuid import UUID
@@ -30,15 +29,6 @@ def checkout_fingerprint(request: CheckoutOrderCreate) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def build_new_order_message(order: dict, user: User) -> str:
-    order_href = html.escape(order["meta"]["uuidHref"], quote=True)
-    user_name = html.escape(user.first_name)
-    return (
-        f'<a href="{order_href}">Новый заказ</a>\n'
-        f"Пользователь: {user_name} Клиент #{user.name_id}"
-    )
-
-
 class OrderCreationManager:
     def __init__(
         self,
@@ -46,14 +36,12 @@ class OrderCreationManager:
         products,
         customer_orders,
         idempotency,
-        notifier,
         logger=None,
     ):
         self._addresses = addresses
         self._products = products
         self._customer_orders = customer_orders
         self._idempotency = idempotency
-        self._notifier = notifier
         self._logger = logger or logging.getLogger(__name__)
 
     async def create(
@@ -105,10 +93,4 @@ class OrderCreationManager:
             await self._addresses.mark_used(user.id, request.address_id)
         except Exception:
             self._logger.exception("failed to mark delivery address as used")
-        try:
-            await self._notifier.send_group_message(
-                build_new_order_message(order, user)
-            )
-        except Exception:
-            self._logger.exception("failed to send new order notification")
         return order

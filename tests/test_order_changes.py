@@ -194,19 +194,6 @@ class StubProducts:
         ]
 
 
-class StubNotifier:
-    def __init__(self, result=True, error=None):
-        self.result = result
-        self.error = error
-        self.messages = []
-
-    async def send_group_message(self, text):
-        if self.error:
-            raise self.error
-        self.messages.append(text)
-        return self.result
-
-
 def make_user():
     return SimpleNamespace(
         moysklad_counterparty_id=UUID("00000000-0000-0000-0000-000000000020"),
@@ -216,11 +203,10 @@ def make_user():
 
 
 @pytest.mark.asyncio
-async def test_manager_updates_positions_and_state_once_then_notifies_once():
+async def test_manager_updates_positions_and_state_once():
     orders = StubCustomerOrders()
     products = StubProducts()
-    notifier = StubNotifier()
-    manager = OrderChangesManager(orders, products, notifier)
+    manager = OrderChangesManager(orders, products)
     request = OrderChangesRequest(
         expected_updated="2026-08-10 12:00:00.000",
         positions=[
@@ -235,7 +221,7 @@ async def test_manager_updates_positions_and_state_once_then_notifies_once():
 
     assert isinstance(result, OrderChangesResponse)
     assert result.changed is True
-    assert result.notification_sent is True
+    assert set(result.model_dump()) == {"order", "changed"}
     assert len(orders.replacements) == 1
     _, positions, state_meta = orders.replacements[0]
     assert state_meta == {"href": "https://api.moysklad.ru/state/changed"}
@@ -253,19 +239,11 @@ async def test_manager_updates_positions_and_state_once_then_notifies_once():
             "meta": {"href": "https://api.moysklad.ru/product/new"}
         },
     }
-    assert len(notifier.messages) == 1
-    assert "&lt;Иван&gt;" in notifier.messages[0]
-    assert "Добавлено: 1" in notifier.messages[0]
-    assert "Удалено: 1" in notifier.messages[0]
-    assert "Количество изменено: 1" in notifier.messages[0]
-
-
 @pytest.mark.asyncio
-async def test_manager_noop_does_not_change_state_create_products_or_notify():
+async def test_manager_noop_does_not_change_state_or_create_products():
     orders = StubCustomerOrders()
     products = StubProducts()
-    notifier = StubNotifier()
-    manager = OrderChangesManager(orders, products, notifier)
+    manager = OrderChangesManager(orders, products)
     request = OrderChangesRequest(
         expected_updated=orders.order["updated"],
         positions=[
@@ -276,11 +254,12 @@ async def test_manager_noop_does_not_change_state_create_products_or_notify():
 
     result = await manager.save_changes(make_user(), orders.order["id"], request)
 
-    assert result.changed is False
-    assert result.notification_sent is None
+    assert result.model_dump() == {
+        "order": orders.order,
+        "changed": False,
+    }
     assert orders.replacements == []
     assert products.orders == []
-    assert notifier.messages == []
 
 
 @pytest.mark.asyncio
@@ -288,7 +267,6 @@ async def test_missing_target_state_is_detected_before_product_creation():
     error = MoySkladOrderStateMissing("Изменен клиентом")
     orders = StubCustomerOrders(state_error=error)
     products = StubProducts()
-    notifier = StubNotifier()
     request = OrderChangesRequest(
         expected_updated=orders.order["updated"],
         positions=[
@@ -302,13 +280,12 @@ async def test_missing_target_state_is_detected_before_product_creation():
     )
 
     with pytest.raises(MoySkladOrderStateMissing):
-        await OrderChangesManager(orders, products, notifier).save_changes(
+        await OrderChangesManager(orders, products).save_changes(
             make_user(), orders.order["id"], request
         )
 
     assert products.orders == []
     assert orders.replacements == []
-    assert notifier.messages == []
 
 
 @pytest.mark.asyncio
@@ -335,8 +312,7 @@ async def test_manager_rejects_status_version_and_owner_before_side_effects(
 ):
     orders = StubCustomerOrders(order)
     products = StubProducts()
-    notifier = StubNotifier()
-    manager = OrderChangesManager(orders, products, notifier)
+    manager = OrderChangesManager(orders, products)
     request = OrderChangesRequest(
         expected_updated="2026-08-10 12:00:00.000",
         positions=[ExistingOrderPositionChange(id=POSITION_1, count=2)],
@@ -347,57 +323,26 @@ async def test_manager_rejects_status_version_and_owner_before_side_effects(
 
     assert orders.replacements == []
     assert products.orders == []
-    assert notifier.messages == []
 
 
 @pytest.mark.asyncio
-async def test_moysklad_failure_skips_telegram_and_telegram_failure_returns_warning():
+async def test_moysklad_failure_is_propagated_without_saved_change():
     request = OrderChangesRequest(
         expected_updated="2026-08-10 12:00:00.000",
         positions=[ExistingOrderPositionChange(id=POSITION_1, count=2)],
     )
     failed_orders = StubCustomerOrders(error=RuntimeError("moysklad unavailable"))
-    notifier = StubNotifier()
     with pytest.raises(RuntimeError, match="moysklad unavailable"):
         await OrderChangesManager(
-            failed_orders, StubProducts(), notifier
+            failed_orders, StubProducts()
         ).save_changes(make_user(), failed_orders.order["id"], request)
-    assert notifier.messages == []
-
-    orders = StubCustomerOrders()
-    result = await OrderChangesManager(
-        orders,
-        StubProducts(),
-        StubNotifier(error=RuntimeError("telegram unavailable")),
-    ).save_changes(make_user(), orders.order["id"], request)
-    assert result.changed is True
-    assert result.notification_sent is False
-
-
-@pytest.mark.asyncio
-async def test_false_notification_result_is_reported_after_saved_order_change():
-    request = OrderChangesRequest(
-        expected_updated="2026-08-10 12:00:00.000",
-        positions=[ExistingOrderPositionChange(id=POSITION_1, count=2)],
-    )
-    orders = StubCustomerOrders()
-
-    result = await OrderChangesManager(
-        orders,
-        StubProducts(),
-        StubNotifier(result=False),
-    ).save_changes(make_user(), orders.order["id"], request)
-
-    assert result.changed is True
-    assert result.notification_sent is False
-    assert len(orders.replacements) == 1
+    assert failed_orders.replacements == []
 
 
 @pytest.mark.asyncio
 async def test_legacy_quantity_change_uses_fresh_order_and_shared_save_path():
     orders = StubCustomerOrders()
-    notifier = StubNotifier()
-    manager = OrderChangesManager(orders, StubProducts(), notifier)
+    manager = OrderChangesManager(orders, StubProducts())
 
     result = await manager.change_quantity(
         make_user(), orders.order["id"], POSITION_1, 4
@@ -406,7 +351,6 @@ async def test_legacy_quantity_change_uses_fresh_order_and_shared_save_path():
     assert result.changed is True
     assert len(orders.replacements) == 1
     assert orders.replacements[0][1][0]["quantity"] == 4
-    assert len(notifier.messages) == 1
 
 
 @pytest.mark.asyncio
@@ -416,7 +360,7 @@ async def test_legacy_delete_rejects_last_position_and_noneditable_status():
         "positions": {"rows": current_rows()[:1]},
     }
     manager = OrderChangesManager(
-        StubCustomerOrders(one_position_order), StubProducts(), StubNotifier()
+        StubCustomerOrders(one_position_order), StubProducts()
     )
     with pytest.raises(InvalidOrderChanges, match="at least one position"):
         await manager.remove_position(
@@ -425,7 +369,7 @@ async def test_legacy_delete_rejects_last_position_and_noneditable_status():
 
     locked = order_payload(status="Принят к исполнению")
     locked_manager = OrderChangesManager(
-        StubCustomerOrders(locked), StubProducts(), StubNotifier()
+        StubCustomerOrders(locked), StubProducts()
     )
     with pytest.raises(OrderNotEditable):
         await locked_manager.change_quantity(
@@ -434,11 +378,10 @@ async def test_legacy_delete_rejects_last_position_and_noneditable_status():
 
 
 @pytest.mark.asyncio
-async def test_legacy_add_positions_creates_every_requested_position_and_notifies_once():
+async def test_legacy_add_positions_creates_every_requested_position():
     orders = StubCustomerOrders()
     products = StubProducts()
-    notifier = StubNotifier()
-    manager = OrderChangesManager(orders, products, notifier)
+    manager = OrderChangesManager(orders, products)
     additions = OrderCreate(
         order_items=[
             OrderItemCreate(link="https://shop.example/one", count=1, comment=""),
@@ -455,4 +398,3 @@ async def test_legacy_add_positions_creates_every_requested_position_and_notifie
     assert result.changed is True
     assert len(products.orders[0].order_items) == 2
     assert len(orders.replacements[0][1]) == 4
-    assert len(notifier.messages) == 1
