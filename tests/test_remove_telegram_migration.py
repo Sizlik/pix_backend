@@ -6,10 +6,10 @@ from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 
 MIGRATION = Path("alembic/versions/d4e5f6a7b8c9_remove_telegram.py")
 CLIENT_ID = UUID("00000000-0000-0000-0000-000000000101")

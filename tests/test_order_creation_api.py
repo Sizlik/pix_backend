@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 import errors
 from config import Settings
 from dependecies import moysklad as dependency_moysklad
-from dependecies import orders as dependency_orders
 from dependecies.orders import get_order_creation_manager
 from main import create_app
 from routes.users import current_user_dependency

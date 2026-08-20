@@ -23,7 +23,6 @@ from manager.order_chat_format import (
     render_order_comment,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

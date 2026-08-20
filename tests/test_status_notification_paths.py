@@ -7,7 +7,6 @@ import pytest
 from db.schemas.notifications import NotificationTypes
 from routes.integration.webhooks import state_changed_webhook
 
-
 ORDER_ID = UUID("00000000-0000-0000-0000-000000000101")
 USER_ID = UUID("00000000-0000-0000-0000-000000000102")
 
