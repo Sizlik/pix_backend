@@ -1,6 +1,28 @@
+from urllib.parse import urlsplit
+
 import pytest
 
 from db import postgres
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--migration-database-url",
+        action="store",
+        default=None,
+        help="Loopback PostgreSQL URL for destructive migration tests",
+    )
+
+
+@pytest.fixture
+def migration_database_url(request):
+    value = request.config.getoption("--migration-database-url")
+    if value is None:
+        pytest.skip("requires --migration-database-url")
+    host = urlsplit(value).hostname
+    if host not in {"localhost", "127.0.0.1", "::1"}:
+        pytest.fail("migration test database must use a loopback host")
+    return value
 
 
 class TrackedSessionFactory:

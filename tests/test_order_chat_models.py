@@ -8,6 +8,8 @@ from db.models.order_chat import (
     OrderChatMessage,
     OrderChatState,
 )
+from db.models.users import User
+from db.schemas.users import UserUpdate
 
 
 def test_order_chat_tables_and_unique_idempotency_keys_are_declared():
@@ -38,3 +40,9 @@ def test_alembic_environment_does_not_import_legacy_chat_models():
     source = Path("alembic/env.py").read_text(encoding="utf-8")
 
     assert "chat as chat" not in source
+
+
+def test_active_user_models_exclude_telegram_identity():
+    assert "telegram_id" not in User.__table__.c
+    assert "telegram_id" not in UserUpdate.model_fields
+    assert OrderChatMessage.__table__.c.legacy_message_id.unique is True

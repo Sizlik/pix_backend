@@ -14,7 +14,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     bitrix_client_id = Column(Integer)
     moysklad_counterparty_id = Column(UUID)
     moysklad_counterparty_meta = Column(JSON)
-    telegram_id = Column(Integer)
     name_id = Column(Integer, autoincrement=True, server_default='1')
 
     organization_id = Column(ForeignKey("organization.id"), nullable=True)
