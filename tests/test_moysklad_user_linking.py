@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
@@ -288,17 +289,10 @@ class StubResolutionManager:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("created", "expected_text"),
-    [
-        (False, "связан с существующим контрагентом"),
-        (True, "Новый пользователь на сайте"),
-    ],
-)
-async def test_after_verify_persists_resolution_before_notification(
+@pytest.mark.parametrize("created", [False, True])
+async def test_after_verify_persists_resolution_without_notification(
     monkeypatch,
     created,
-    expected_text,
 ):
     external = counterparty(1, "89991234567")
     resolution_manager = StubResolutionManager(
@@ -315,74 +309,27 @@ async def test_after_verify_persists_resolution_before_notification(
         events.append(("update", data, current_user, request))
         return current_user
 
-    async def send_group_message(message):
-        events.append(("telegram", message))
-
     monkeypatch.setattr(
         users_module.moysklad,
         "get_counterparty_manager",
         get_counterparty_manager,
     )
     monkeypatch.setattr(manager, "update", update)
-    monkeypatch.setattr(
-        users_module.telegram_sender,
-        "send_group_message",
-        send_group_message,
-    )
-
     await manager.on_after_verify(user)
 
-    assert [event[0] for event in events] == ["update", "telegram"]
+    assert [event[0] for event in events] == ["update"]
     update_data = events[0][1]
     assert str(update_data.moysklad_counterparty_id) == external["id"]
     assert update_data.moysklad_counterparty_meta == external["meta"]
-    assert events[1][1].startswith(
-        f'<a href="{external["meta"]["uuidHref"]}">'
-    )
-    assert expected_text in events[1][1]
     assert resolution_manager.payloads[0].phone == user.phone_number
 
 
-@pytest.mark.asyncio
-async def test_after_verify_logs_telegram_failure_after_persisting(
-    monkeypatch,
-    caplog,
-):
-    external = counterparty(1, "89991234567")
-    resolution_manager = StubResolutionManager(
-        CounterpartyResolution(external, created=False)
-    )
-    manager = user_manager()
-    events = []
+def test_user_manager_has_no_notification_sender_dependency():
+    source = Path("manager/users.py").read_text(encoding="utf-8")
 
-    async def get_counterparty_manager():
-        return resolution_manager
-
-    async def update(data, current_user, request=None):
-        events.append("update")
-        return current_user
-
-    async def fail_notification(message):
-        events.append("telegram")
-        raise RuntimeError("telegram unavailable")
-
-    monkeypatch.setattr(
-        users_module.moysklad,
-        "get_counterparty_manager",
-        get_counterparty_manager,
-    )
-    monkeypatch.setattr(manager, "update", update)
-    monkeypatch.setattr(
-        users_module.telegram_sender,
-        "send_group_message",
-        fail_notification,
-    )
-
-    with caplog.at_level(logging.ERROR):
-        await manager.on_after_verify(verified_user())
-
-    assert events == ["update", "telegram"]
-    assert "MoySklad user verification notification" in caplog.text
+    assert "bot.sender" not in source
+    assert "telegram_sender" not in source
+    assert "send_group_message" not in source
 
 
 @pytest.mark.asyncio
@@ -511,7 +458,6 @@ async def test_after_verify_keeps_existing_link_without_lookup_or_update(
     monkeypatch,
 ):
     manager = user_manager()
-    messages = []
 
     async def fail_lookup():
         raise AssertionError("linked user triggered MoySklad lookup")
@@ -519,21 +465,12 @@ async def test_after_verify_keeps_existing_link_without_lookup_or_update(
     async def fail_update(*args, **kwargs):
         raise AssertionError("linked user was updated")
 
-    async def send_group_message(message):
-        messages.append(message)
-
     monkeypatch.setattr(
         users_module.moysklad,
         "get_counterparty_manager",
         fail_lookup,
     )
     monkeypatch.setattr(manager, "update", fail_update)
-    monkeypatch.setattr(
-        users_module.telegram_sender,
-        "send_group_message",
-        send_group_message,
-    )
-
     await manager.on_after_verify(
         verified_user(
             moysklad_counterparty_id="00000000-0000-0000-0000-000000000001",
@@ -542,6 +479,3 @@ async def test_after_verify_keeps_existing_link_without_lookup_or_update(
             },
         )
     )
-
-    assert len(messages) == 1
-    assert "Пользователь подтвердил почту" in messages[0]

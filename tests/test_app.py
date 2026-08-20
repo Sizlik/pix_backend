@@ -46,3 +46,13 @@ def test_integration_configuration_error_maps_to_503():
 
     assert response.status_code == 503
     assert response.json() == {"detail": "moysklad is not configured"}
+
+
+def test_telegram_and_bot_routes_are_not_mounted():
+    from main import create_app
+
+    app = create_app(Settings(_env_file=None, app_env="test"))
+    paths = {route.path for route in app.routes}
+
+    assert "/api_v1/users/telegram/{telegram_id}" not in paths
+    assert not any(path.startswith("/api_v1/bot") for path in paths)

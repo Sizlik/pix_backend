@@ -8,7 +8,6 @@ from fastapi import Depends
 from fastapi_users import BaseUserManager, UUIDIDMixin, models
 from starlette.requests import Request
 
-from bot.sender import telegram_sender
 from config import Settings, get_settings, require_secret
 from db import postgres
 from db.models.users import User, UserDatabase, get_user_db
@@ -78,36 +77,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
     async def on_after_verify(self, user: User, request: Optional[Request] = None) -> None:
         try:
-            user, resolution = await self.ensure_moysklad_counterparty(
+            await self.ensure_moysklad_counterparty(
                 user,
                 request,
             )
         except Exception:
             logger.exception("Failed to link verified user to MoySklad")
-            return
-
-        try:
-            if resolution is None:
-                await telegram_sender.send_group_message(
-                    f'<a href="{user.moysklad_counterparty_meta.get("uuidHref")}">Пользователь подтвердил почту!</a>\n{user.first_name} Клиент #{user.name_id}'
-                )
-                return
-
-            counterparty = resolution.counterparty
-            notification_title = (
-                "Новый пользователь на сайте!"
-                if resolution.created
-                else "Пользователь связан с существующим контрагентом!"
-            )
-            await telegram_sender.send_group_message(
-                f'<a href="{counterparty["meta"]["uuidHref"]}">'
-                f"{notification_title}</a>\n"
-                f"{user.first_name} Клиент #{user.name_id}"
-            )
-        except Exception:
-            logger.exception(
-                "Failed to send MoySklad user verification notification"
-            )
 
     async def on_after_register(self, user: models.UP, request: Optional[Request] = None) -> None:
         await self.request_verify(user, request)
