@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-20
 
-**Status:** Design approved in chat; written specification awaiting review
+**Status:** Approved
 
 ## Goal
 
