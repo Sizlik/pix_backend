@@ -10,6 +10,7 @@ from starlette.requests import Request
 
 from bot.sender import telegram_sender
 from config import Settings, get_settings, require_secret
+from db import postgres
 from db.models.users import User, UserDatabase, get_user_db
 from db.redis import redis
 from db.schemas import moysklad as schemas_moysklad
@@ -127,6 +128,13 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
 async def get_user_manager(user_db=Depends(get_user_db)):
     yield UserManager(user_db, get_settings())
+
+
+async def authenticate_websocket_user(token, strategy):
+    async with postgres.async_session_maker() as session:
+        user_db = UserDatabase(session, User)
+        user_manager = UserManager(user_db, get_settings())
+        return await strategy.read_token(token, user_manager)
 
 
 def generate_code(length=6) -> str:

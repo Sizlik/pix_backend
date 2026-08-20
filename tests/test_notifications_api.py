@@ -12,7 +12,6 @@ from dependecies.notifications import (
     get_notification_realtime,
 )
 from main import create_app
-from manager.users import get_user_manager
 from routes.users import current_user_dependency
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -97,7 +96,6 @@ def websocket_app(*, valid_user, count):
     app = notification_app(manager)
     app.dependency_overrides[get_notification_realtime] = lambda: realtime
     app.dependency_overrides[get_redis_strategy] = lambda: StubStrategy(valid_user)
-    app.dependency_overrides[get_user_manager] = lambda: object()
     return app, realtime
 
 
@@ -174,6 +172,26 @@ def test_notification_websocket_sends_initial_authoritative_count():
 
     assert realtime.connected_user_ids == [str(USER_ID)]
     assert realtime.disconnected_user_ids == [str(USER_ID)]
+
+
+def test_notification_websocket_releases_auth_session_before_waiting(
+    tracked_session_factory,
+):
+    user = SimpleNamespace(id=USER_ID)
+    realtime = StubRealtime()
+    manager = StubNotificationManager(count=7, realtime=realtime)
+    app = notification_app(manager)
+    app.dependency_overrides[get_notification_realtime] = lambda: realtime
+    app.dependency_overrides[get_redis_strategy] = lambda: StubStrategy(user)
+
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/api_v1/notifications/ws?auth=valid-token"
+        ) as websocket:
+            assert websocket.receive_json()["unread_count"] == 7
+            assert tracked_session_factory.active == 0
+
+    assert tracked_session_factory.peak == 1
 
 
 @pytest.mark.parametrize(

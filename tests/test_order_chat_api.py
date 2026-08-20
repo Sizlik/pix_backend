@@ -19,7 +19,6 @@ from dependecies.notifications import get_notification_manager
 from dependecies.order_chat import get_order_chat_access_policy, get_order_chat_service
 from main import create_app
 from manager.order_chat import DownloadedAttachment, OrderChatNotFound
-from manager.users import get_user_manager
 from routes.users import current_user_dependency
 
 ORDER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -184,7 +183,6 @@ def test_order_websocket_rejects_client_writes_in_favor_of_http():
     manager = SocketChatManager()
     policy = SimpleNamespace(assert_client_access=AsyncMock(return_value={}))
     app.dependency_overrides[get_redis_strategy] = lambda: SocketTokenStrategy(user)
-    app.dependency_overrides[get_user_manager] = lambda: object()
     app.dependency_overrides[get_chat_manager] = lambda: manager
     app.dependency_overrides[get_order_chat_access_policy] = lambda: policy
 
@@ -197,3 +195,28 @@ def test_order_websocket_rejects_client_writes_in_favor_of_http():
             }
 
     assert manager.persisted == []
+
+
+def test_order_websocket_releases_auth_session_before_waiting(
+    tracked_session_factory,
+):
+    app = create_app(Settings(_env_file=None, app_env="test"))
+    user = SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000002"),
+        moysklad_counterparty_id=UUID("00000000-0000-0000-0000-000000000003"),
+    )
+    manager = SocketChatManager()
+    policy = SimpleNamespace(assert_client_access=AsyncMock(return_value={}))
+    app.dependency_overrides[get_redis_strategy] = lambda: SocketTokenStrategy(user)
+    app.dependency_overrides[get_chat_manager] = lambda: manager
+    app.dependency_overrides[get_order_chat_access_policy] = lambda: policy
+
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            f"/api_v1/chat/ws?auth=token&room={ORDER_ID}"
+        ) as socket:
+            socket.send_json({"message": "must not persist"})
+            assert socket.receive_json()["code"] == "order_chat_http_required"
+            assert tracked_session_factory.active == 0
+
+    assert tracked_session_factory.peak == 1

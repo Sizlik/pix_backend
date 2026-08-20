@@ -41,7 +41,7 @@ from manager.order_chat import (
     OrderChatService,
     PendingUpload,
 )
-from manager.users import get_user_manager
+from manager.users import authenticate_websocket_user
 from routes.users import current_user_dependency
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -112,7 +112,6 @@ async def download_order_chat_attachment(
 async def websocket_connection(
     websocket: WebSocket,
     redis_strategy: RedisStrategy = Depends(get_redis_strategy),
-    user_manager=Depends(get_user_manager),
     chat_manager: ChatManager = Depends(get_chat_manager),
     order_access_policy: OrderChatAccessPolicy = Depends(get_order_chat_access_policy),
 ):
@@ -120,7 +119,7 @@ async def websocket_connection(
     if not token:
         await websocket.close(code=4401)
         return
-    user = await redis_strategy.read_token(token, user_manager)
+    user = await authenticate_websocket_user(token, redis_strategy)
 
     if not user:
         await websocket.close(code=4401)

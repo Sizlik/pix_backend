@@ -22,7 +22,7 @@ from manager.chat import MessageManager
 from manager.moysklad import CustomerOrderManager
 from manager.notification_realtime import NotificationRealtime
 from manager.notifications import NotificationManager
-from manager.users import get_user_manager
+from manager.users import authenticate_websocket_user
 from routes.users import current_user_dependency
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -116,7 +116,6 @@ async def read_all_notifications(
 async def notification_websocket(
     websocket: WebSocket,
     redis_strategy: RedisStrategy = Depends(get_redis_strategy),
-    user_manager=Depends(get_user_manager),
     notification_manager: NotificationManager = Depends(get_notification_manager),
     realtime: NotificationRealtime = Depends(get_notification_realtime),
 ):
@@ -124,7 +123,7 @@ async def notification_websocket(
     if not token:
         await websocket.close(code=4401)
         return
-    user = await redis_strategy.read_token(token, user_manager)
+    user = await authenticate_websocket_user(token, redis_strategy)
     if not user:
         await websocket.close(code=4401)
         return
