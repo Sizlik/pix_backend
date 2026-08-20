@@ -120,7 +120,7 @@ def test_count_and_read_routes_pass_only_current_user_id():
 def test_create_route_requires_authentication_and_forces_current_user():
     payload = {
         "user_id": str(UUID("00000000-0000-0000-0000-000000000099")),
-        "type": "MESSAGE",
+        "type": "ORDER_MESSAGE",
         "object_id": str(NOTIFICATION_ID),
     }
     manager = StubNotificationManager()

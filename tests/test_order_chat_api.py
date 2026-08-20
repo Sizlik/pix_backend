@@ -3,10 +3,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from config import Settings
-from db.models.users import get_user_db
 from db.redis import get_redis_strategy
 from db.schemas.chat import (
     OrderChatAttachmentResponse,
@@ -14,8 +15,7 @@ from db.schemas.chat import (
     OrderChatPageResponse,
     SenderKind,
 )
-from dependecies.chat import get_chat_manager
-from dependecies.notifications import get_notification_manager
+from dependecies.chat import get_chat_realtime
 from dependecies.order_chat import get_order_chat_access_policy, get_order_chat_service
 from main import create_app
 from manager.order_chat import DownloadedAttachment, OrderChatNotFound
@@ -128,28 +128,24 @@ def test_attachment_download_requires_authentication():
     assert response.status_code == 401
 
 
-def test_legacy_order_reply_endpoint_requires_moysklad_comment():
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/api_v1/chat/send_message"),
+        ("get", "/api_v1/chat/messages"),
+        ("get", f"/api_v1/chat/messages/{ORDER_ID}"),
+        ("post", f"/api_v1/chat/{ORDER_ID}"),
+        ("get", f"/api_v1/chat/{ORDER_ID}"),
+        ("get", "/api_v1/chat/"),
+    ],
+)
+def test_legacy_support_chat_routes_are_removed(method, path):
     app = create_app(Settings(_env_file=None, app_env="test"))
-    app.dependency_overrides[current_user_dependency] = lambda: SimpleNamespace(
-        id=UUID("00000000-0000-0000-0000-000000000002"),
-        email="bot@pixlogistic.com",
-    )
-    app.dependency_overrides[get_chat_manager] = lambda: SimpleNamespace()
-    app.dependency_overrides[get_notification_manager] = lambda: SimpleNamespace()
-    app.dependency_overrides[get_user_db] = lambda: SimpleNamespace()
 
     with TestClient(app) as client:
-        response = client.post(
-            "/api_v1/chat/send_message",
-            json={
-                "message": "old reply",
-                "to_chat_room": str(ORDER_ID),
-                "client_id": "00000000-0000-0000-0000-000000000002",
-            },
-        )
+        response = client.request(method, path)
 
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == ("order_reply_in_moysklad_required")
+    assert response.status_code == 404
 
 
 class SocketTokenStrategy:
@@ -160,7 +156,7 @@ class SocketTokenStrategy:
         return self.user
 
 
-class SocketChatManager:
+class SocketRealtime:
     def __init__(self):
         self.persisted = []
 
@@ -170,20 +166,16 @@ class SocketChatManager:
     async def disconnect(self, room_id, websocket):
         return None
 
-    async def send_message_from_client(self, *args):
-        self.persisted.append(args)
-
-
 def test_order_websocket_rejects_client_writes_in_favor_of_http():
     app = create_app(Settings(_env_file=None, app_env="test"))
     user = SimpleNamespace(
         id=UUID("00000000-0000-0000-0000-000000000002"),
         moysklad_counterparty_id=UUID("00000000-0000-0000-0000-000000000003"),
     )
-    manager = SocketChatManager()
+    realtime = SocketRealtime()
     policy = SimpleNamespace(assert_client_access=AsyncMock(return_value={}))
     app.dependency_overrides[get_redis_strategy] = lambda: SocketTokenStrategy(user)
-    app.dependency_overrides[get_chat_manager] = lambda: manager
+    app.dependency_overrides[get_chat_realtime] = lambda: realtime
     app.dependency_overrides[get_order_chat_access_policy] = lambda: policy
 
     with TestClient(app) as client:
@@ -194,7 +186,26 @@ def test_order_websocket_rejects_client_writes_in_favor_of_http():
                 "code": "order_chat_http_required",
             }
 
-    assert manager.persisted == []
+    assert realtime.persisted == []
+
+
+def test_order_websocket_requires_explicit_room(monkeypatch):
+    app = create_app(Settings(_env_file=None, app_env="test"))
+    monkeypatch.setattr(
+        "routes.chat.authenticate_websocket_user",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id=UUID("00000000-0000-0000-0000-000000000002")
+            )
+        ),
+    )
+
+    with TestClient(app) as client:
+        with pytest.raises(WebSocketDisconnect) as error:
+            with client.websocket_connect("/api_v1/chat/ws?auth=token"):
+                pass
+
+    assert error.value.code == 4400
 
 
 def test_order_websocket_releases_auth_session_before_waiting(
@@ -205,10 +216,10 @@ def test_order_websocket_releases_auth_session_before_waiting(
         id=UUID("00000000-0000-0000-0000-000000000002"),
         moysklad_counterparty_id=UUID("00000000-0000-0000-0000-000000000003"),
     )
-    manager = SocketChatManager()
+    realtime = SocketRealtime()
     policy = SimpleNamespace(assert_client_access=AsyncMock(return_value={}))
     app.dependency_overrides[get_redis_strategy] = lambda: SocketTokenStrategy(user)
-    app.dependency_overrides[get_chat_manager] = lambda: manager
+    app.dependency_overrides[get_chat_realtime] = lambda: realtime
     app.dependency_overrides[get_order_chat_access_policy] = lambda: policy
 
     with TestClient(app) as client:

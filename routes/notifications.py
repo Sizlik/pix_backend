@@ -11,14 +11,12 @@ from db.schemas.notifications import (
     NotificationCreate,
     NotificationTypes,
 )
-from dependecies.chat import get_message_manager
 from dependecies.moysklad import get_customer_order_manager
 from dependecies.notifications import (
     get_notification_manager,
     get_notification_realtime,
 )
 from dependecies.order_chat import get_order_chat_repository
-from manager.chat import MessageManager
 from manager.moysklad import CustomerOrderManager
 from manager.notification_realtime import NotificationRealtime
 from manager.notifications import NotificationManager
@@ -43,18 +41,12 @@ async def get_user_notifications(
     user: User = Depends(current_user_dependency),
     notification_manager: NotificationManager = Depends(get_notification_manager),
     order_manager: CustomerOrderManager = Depends(get_customer_order_manager),
-    message_manager: MessageManager = Depends(get_message_manager),
     order_chat_repository: OrderChatRepository = Depends(get_order_chat_repository),
 ):
     notifications = await notification_manager.get_notifications_by_user(user)
     response = []
     for notification in notifications:
         match notification.type:
-            case NotificationTypes.MESSAGE.value:
-                message = await message_manager.get_message_by_id(notification.object_id)
-                item = message.__dict__
-                item.update(notification.__dict__)
-                response.append(item)
             case NotificationTypes.ORDER_MESSAGE.value:
                 order_message = await order_chat_repository.get_message(notification.object_id)
                 if order_message is not None:
@@ -70,12 +62,6 @@ async def get_user_notifications(
                             "time_created": order_message.created_at,
                         }
                     )
-                else:
-                    message = await message_manager.get_message_by_id(notification.object_id)
-                    item = message.__dict__
-                    item.update(notification.__dict__)
-                    response.append(item)
-
             case NotificationTypes.ORDER_UPDATED.value:
                 order = await order_manager.get_order_by_id(notification.object_id)
                 order.update(notification.__dict__)

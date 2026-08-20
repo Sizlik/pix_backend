@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 
 
 class NotificationTypes(str, Enum):
-    MESSAGE = "MESSAGE"
     ORDER_MESSAGE = "ORDER_MESSAGE"
     ORDER_UPDATED = "ORDER_UPDATED"
 

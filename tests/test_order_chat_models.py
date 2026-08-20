@@ -32,3 +32,9 @@ def test_migration_is_append_only_and_does_not_run_data_changes():
     assert "BEFORE UPDATE OR DELETE ON order_chat_attachment" in migration
     assert 'op.execute("UPDATE message' not in migration
     assert 'op.execute("DELETE FROM message' not in migration
+
+
+def test_alembic_environment_does_not_import_legacy_chat_models():
+    source = Path("alembic/env.py").read_text(encoding="utf-8")
+
+    assert "chat as chat" not in source

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from db.schemas.notifications import NotificationCreate, NotificationTypes
 from manager.notifications import NotificationManager
+from routes.notifications import get_user_notifications
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 OTHER_ID = UUID("00000000-0000-0000-0000-000000000002")
@@ -140,7 +141,7 @@ async def test_create_publishes_count_and_survives_realtime_failure():
     )
     data = NotificationCreate(
         user_id=str(USER_ID),
-        type=NotificationTypes.MESSAGE,
+        type=NotificationTypes.ORDER_MESSAGE,
         object_id=str(NOTIFICATION_ID),
     )
 
@@ -204,3 +205,37 @@ async def test_read_returns_fresh_count_when_realtime_lock_times_out():
     assert count == 0
     assert repository.rows[NOTIFICATION_ID].is_readed is True
     assert realtime.events == []
+
+
+def test_notification_types_exclude_legacy_support_message():
+    assert {item.value for item in NotificationTypes} == {
+        "ORDER_MESSAGE",
+        "ORDER_UPDATED",
+    }
+
+
+async def test_missing_order_chat_message_notification_is_omitted():
+    notification = SimpleNamespace(
+        id=NOTIFICATION_ID,
+        user_id=USER_ID,
+        type=NotificationTypes.ORDER_MESSAGE.value,
+        object_id=UUID("00000000-0000-0000-0000-000000000099"),
+    )
+
+    class Notifications:
+        async def get_notifications_by_user(self, user):
+            return [notification]
+
+    class OrderChat:
+        async def get_message(self, message_id):
+            assert message_id == notification.object_id
+            return None
+
+    response = await get_user_notifications(
+        user=SimpleNamespace(id=USER_ID),
+        notification_manager=Notifications(),
+        order_manager=SimpleNamespace(),
+        order_chat_repository=OrderChat(),
+    )
+
+    assert response == []

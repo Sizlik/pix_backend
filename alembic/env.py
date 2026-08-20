@@ -10,9 +10,6 @@ from db.models import (
     addresses as addresses,
 )
 from db.models import (
-    chat as chat,
-)
-from db.models import (
     notifications as notifications,
 )
 from db.models import (
