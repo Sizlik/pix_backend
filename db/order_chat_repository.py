@@ -127,17 +127,6 @@ class OrderChatRepository:
 
                 state = OrderChatState(order_id=order_id, client_id=client_id)
                 session.add(state)
-                await self._insert_outbox_events(
-                    session,
-                    (
-                        NewOutboxEvent(
-                            event_type="sync_order",
-                            order_id=order_id,
-                            dedup_key=f"initialize_order:{order_id}",
-                            payload={},
-                        ),
-                    ),
-                )
                 await session.flush()
                 return state
 
@@ -163,6 +152,14 @@ class OrderChatRepository:
                 .where(OrderChatState.order_id == order_id)
             )
             return result.scalar_one_or_none()
+
+    async def get_user_by_moysklad_counterparty(self, counterparty_id: UUID) -> User | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(User).where(User.moysklad_counterparty_id == counterparty_id).limit(2)
+            )
+            users = list(result.scalars())
+            return users[0] if len(users) == 1 else None
 
     async def create_message(
         self,
@@ -207,7 +204,8 @@ class OrderChatRepository:
         order_id: UUID,
         client_id: UUID,
         body: str,
-        external_key: str,
+        source: str = "moysklad",
+        external_key: str | None = None,
         attachments: tuple[NewAttachment, ...] = (),
         outbox_events: tuple[NewOutboxEvent, ...] = (),
         moysklad_files: tuple[NewMoySkladOrderFile, ...] = (),
@@ -221,7 +219,7 @@ class OrderChatRepository:
                     order_id=order_id,
                     client_id=client_id,
                     sender_kind="manager",
-                    source="moysklad",
+                    source=source,
                     body=body,
                     external_key=external_key,
                     legacy_message_id=None,
@@ -333,6 +331,29 @@ class OrderChatRepository:
                     OrderChatMessage.id == OrderChatAttachment.message_id,
                 )
                 .where(OrderChatAttachment.id == attachment_id)
+            )
+            row = result.one_or_none()
+            if row is None:
+                return None
+            attachment, message = row
+            return attachment, _stored_message(message, (attachment,))
+
+    async def get_attachment_for_order(
+        self,
+        order_id: UUID,
+        attachment_id: UUID,
+    ) -> tuple[OrderChatAttachment, StoredMessage] | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(OrderChatAttachment, OrderChatMessage)
+                .join(
+                    OrderChatMessage,
+                    OrderChatMessage.id == OrderChatAttachment.message_id,
+                )
+                .where(
+                    OrderChatAttachment.id == attachment_id,
+                    OrderChatMessage.order_id == order_id,
+                )
             )
             row = result.one_or_none()
             if row is None:

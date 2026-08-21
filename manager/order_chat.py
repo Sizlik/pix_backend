@@ -1,9 +1,9 @@
+import logging
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 from db.order_chat_repository import (
     NewAttachment,
-    NewOutboxEvent,
     OrderChatRepository,
     StoredMessage,
     object_key,
@@ -15,6 +15,8 @@ from db.schemas.chat import (
 )
 from manager.chat_files import validate_upload_batch
 from manager.chat_storage import ObjectStorage
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +57,28 @@ class OrderChatAccessPolicy:
         return order
 
 
+class OperatorOrderChatAccessPolicy:
+    def __init__(self, moysklad, repository: OrderChatRepository):
+        self._moysklad = moysklad
+        self._repository = repository
+
+    async def resolve_client(self, order_id: UUID):
+        order = await self._moysklad.get_order(order_id)
+        try:
+            href = order["agent"]["meta"]["href"]
+            counterparty_id = UUID(href.rstrip("/").rsplit("/", 1)[-1])
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise OrderChatNotFound() from None
+        client = await self._repository.get_user_by_moysklad_counterparty(counterparty_id)
+        if client is None:
+            raise OrderChatNotFound()
+        try:
+            await self._repository.ensure_state(order_id, client.id)
+        except LookupError:
+            raise OrderChatNotFound() from None
+        return client
+
+
 class OrderChatService:
     def __init__(
         self,
@@ -65,6 +89,8 @@ class OrderChatService:
         attachment_max_count: int,
         attachment_max_bytes: int,
         realtime=None,
+        operator_access_policy: OperatorOrderChatAccessPolicy | None = None,
+        notification_manager=None,
     ):
         self._repository = repository
         self._storage = storage
@@ -72,6 +98,8 @@ class OrderChatService:
         self._attachment_max_count = attachment_max_count
         self._attachment_max_bytes = attachment_max_bytes
         self._realtime = realtime
+        self._operator_access_policy = operator_access_policy
+        self._notification_manager = notification_manager
 
     async def list_messages(
         self,
@@ -81,6 +109,19 @@ class OrderChatService:
         limit: int,
     ) -> OrderChatPageResponse:
         await self._prepare_order(user, order_id)
+        messages, next_before = await self._repository.list_messages(order_id, before, limit)
+        return OrderChatPageResponse(
+            items=[await self._response(item) for item in messages],
+            next_before=next_before,
+        )
+
+    async def list_operator_messages(
+        self,
+        order_id: UUID,
+        before: UUID | None,
+        limit: int,
+    ) -> OrderChatPageResponse:
+        await self.prepare_operator_order(order_id)
         messages, next_before = await self._repository.list_messages(order_id, before, limit)
         return OrderChatPageResponse(
             items=[await self._response(item) for item in messages],
@@ -105,33 +146,14 @@ class OrderChatService:
         )
 
         message_id = uuid4()
-        new_attachments: list[NewAttachment] = []
-        stored_keys: list[str] = []
+        new_attachments: tuple[NewAttachment, ...] = ()
+        stored_keys: tuple[str, ...] = ()
         try:
-            for upload in validated:
-                attachment_id = uuid4()
-                key = object_key(order_id, message_id, attachment_id)
-                await self._storage.put(key, upload.content, upload.mime_type)
-                stored_keys.append(key)
-                new_attachments.append(
-                    NewAttachment(
-                        id=attachment_id,
-                        object_key=key,
-                        original_filename=upload.filename,
-                        mime_type=upload.mime_type,
-                        size_bytes=upload.size_bytes,
-                        sha256=upload.sha256,
-                        origin="site",
-                    )
-                )
-
-            events = (
-                NewOutboxEvent(
-                    event_type="sync_order",
-                    order_id=order_id,
-                    dedup_key=f"sync_order:{message_id}",
-                    payload={"message_id": str(message_id)},
-                ),
+            new_attachments, stored_keys = await self._store_attachments(
+                order_id,
+                message_id,
+                validated,
+                origin="site",
             )
             stored = await self._repository.create_message(
                 message_id=message_id,
@@ -140,19 +162,66 @@ class OrderChatService:
                 sender_kind="client",
                 source="site",
                 body=normalized_body,
-                attachments=tuple(new_attachments),
-                outbox_events=events,
+                attachments=new_attachments,
+                outbox_events=(),
             )
         except Exception:
             for key in stored_keys:
                 await self._storage.delete(key)
             raise
         response = await self._response(stored)
-        if self._realtime is not None:
+        await self._publish_message(order_id, response)
+        return response
+
+    async def create_manager_message(
+        self,
+        order_id: UUID,
+        body: str,
+        uploads: list[PendingUpload],
+    ) -> OrderChatMessageResponse:
+        client = await self.prepare_operator_order(order_id)
+        normalized_body = body.strip()
+        if not normalized_body and not uploads:
+            raise EmptyOrderChatMessage()
+        validated = validate_upload_batch(
+            [(item.filename, item.content) for item in uploads],
+            self._attachment_max_count,
+            self._attachment_max_bytes,
+        )
+
+        message_id = uuid4()
+        new_attachments: tuple[NewAttachment, ...] = ()
+        stored_keys: tuple[str, ...] = ()
+        try:
+            new_attachments, stored_keys = await self._store_attachments(
+                order_id,
+                message_id,
+                validated,
+                origin="extension",
+            )
+            stored = await self._repository.create_manager_message_with_notification(
+                message_id=message_id,
+                order_id=order_id,
+                client_id=client.id,
+                body=normalized_body,
+                source="extension",
+                external_key=None,
+                attachments=new_attachments,
+                outbox_events=(),
+                moysklad_files=(),
+            )
+        except Exception:
+            for key in stored_keys:
+                await self._storage.delete(key)
+            raise
+
+        response = await self._response(stored)
+        await self._publish_message(order_id, response)
+        if self._notification_manager is not None:
             try:
-                await self._realtime.publish(str(order_id), response.model_dump(mode="json"))
+                await self._notification_manager.notify_count_changed(client.id)
             except Exception:
-                pass
+                logger.warning("order chat notification count publication failed")
         return response
 
     async def get_attachment(self, user, attachment_id: UUID) -> DownloadedAttachment:
@@ -166,6 +235,27 @@ class OrderChatService:
             mime_type=attachment.mime_type,
             content=await self._storage.read(attachment.object_key),
         )
+
+    async def get_operator_attachment(
+        self,
+        order_id: UUID,
+        attachment_id: UUID,
+    ) -> DownloadedAttachment:
+        await self.prepare_operator_order(order_id)
+        record = await self._repository.get_attachment_for_order(order_id, attachment_id)
+        if record is None:
+            raise OrderChatNotFound()
+        attachment, _ = record
+        return DownloadedAttachment(
+            filename=attachment.original_filename,
+            mime_type=attachment.mime_type,
+            content=await self._storage.read(attachment.object_key),
+        )
+
+    async def prepare_operator_order(self, order_id: UUID):
+        if self._operator_access_policy is None:
+            raise OrderChatNotFound()
+        return await self._operator_access_policy.resolve_client(order_id)
 
     async def _prepare_order(self, user, order_id: UUID) -> dict:
         order = await self._access_policy.assert_client_access(user, order_id)
@@ -193,5 +283,49 @@ class OrderChatService:
                 )
                 for item in message.attachments
             ],
-            delivery_state=await self._repository.delivery_state_for(message),
         )
+
+    async def _store_attachments(
+        self,
+        order_id: UUID,
+        message_id: UUID,
+        uploads,
+        *,
+        origin: str,
+    ) -> tuple[tuple[NewAttachment, ...], tuple[str, ...]]:
+        attachments: list[NewAttachment] = []
+        stored_keys: list[str] = []
+        try:
+            for upload in uploads:
+                attachment_id = uuid4()
+                key = object_key(order_id, message_id, attachment_id)
+                await self._storage.put(key, upload.content, upload.mime_type)
+                stored_keys.append(key)
+                attachments.append(
+                    NewAttachment(
+                        id=attachment_id,
+                        object_key=key,
+                        original_filename=upload.filename,
+                        mime_type=upload.mime_type,
+                        size_bytes=upload.size_bytes,
+                        sha256=upload.sha256,
+                        origin=origin,
+                    )
+                )
+        except Exception:
+            for key in stored_keys:
+                await self._storage.delete(key)
+            raise
+        return tuple(attachments), tuple(stored_keys)
+
+    async def _publish_message(
+        self,
+        order_id: UUID,
+        response: OrderChatMessageResponse,
+    ) -> None:
+        if self._realtime is None:
+            return
+        try:
+            await self._realtime.publish(str(order_id), response.model_dump(mode="json"))
+        except Exception:
+            logger.warning("order chat room publication failed")

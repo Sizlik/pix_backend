@@ -8,6 +8,7 @@ import requests
 from anyio import to_thread
 
 from config import Settings, require_secret, require_value
+from errors import MoySkladOrderLookupUnavailable
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,13 +62,27 @@ class MoySkladOrderChatRepository:
         response.raise_for_status()
         return response
 
-    async def get_order(self, order_id: UUID) -> dict:
-        response = await self._request(
-            "GET",
-            f"entity/customerorder/{order_id}",
-            params={"expand": "agent"},
-        )
-        return response.json()
+    async def get_order(self, order_id: UUID) -> dict | None:
+        try:
+            response = await self._request(
+                "GET",
+                f"entity/customerorder/{order_id}",
+                params={"expand": "agent"},
+            )
+        except requests.HTTPError as error:
+            if error.response is not None and error.response.status_code == 404:
+                return None
+            raise MoySkladOrderLookupUnavailable() from None
+        except requests.RequestException:
+            raise MoySkladOrderLookupUnavailable() from None
+
+        try:
+            payload = response.json()
+        except (TypeError, ValueError):
+            raise MoySkladOrderLookupUnavailable() from None
+        if not isinstance(payload, dict):
+            raise MoySkladOrderLookupUnavailable()
+        return payload
 
     async def update_description(self, order_id: UUID, description: str) -> dict:
         response = await self._request(

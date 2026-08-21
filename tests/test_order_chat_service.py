@@ -85,9 +85,6 @@ class FakeRepository:
             attachments=attachments,
         )
 
-    async def delivery_state_for(self, message):
-        return "pending"
-
 
 def make_service(*, moysklad=None, repository=None, storage=None):
     moysklad = moysklad or FakeMoySklad()
@@ -123,7 +120,7 @@ async def test_access_policy_hides_another_clients_order():
         await service.list_messages(UserStub(), ORDER_ID, before=None, limit=50)
 
 
-async def test_file_only_message_stores_sync_event_and_returns_generic_sender():
+async def test_file_only_message_has_no_projection_event_or_delivery_state():
     service, repository, storage = make_service()
 
     result = await service.create_client_message(
@@ -136,8 +133,8 @@ async def test_file_only_message_stores_sync_event_and_returns_generic_sender():
     assert result.message == ""
     assert result.sender_label == "Клиент"
     assert len(result.attachments) == 1
-    assert [event.event_type for event in repository.events] == ["sync_order"]
-    assert repository.events[0].dedup_key == f"sync_order:{result.id}"
+    assert repository.events == []
+    assert not hasattr(result, "delivery_state")
     assert len(storage.objects) == 1
 
 

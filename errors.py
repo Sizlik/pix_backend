@@ -11,6 +11,11 @@ class MoySkladDocumentExportError(RuntimeError):
         super().__init__("MoySklad document export failed")
 
 
+class MoySkladOrderLookupUnavailable(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("MoySklad order lookup unavailable")
+
+
 class LinkPreviewValidationError(ValueError):
     def __init__(self) -> None:
         super().__init__("URL is not allowed")

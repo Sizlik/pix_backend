@@ -1,6 +1,5 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -41,7 +40,6 @@ class OrderChatMessageResponse(BaseModel):
     message: str
     created_at: datetime
     attachments: list[OrderChatAttachmentResponse]
-    delivery_state: Literal["pending", "synced", "failed"]
 
 
 class OrderChatPageResponse(BaseModel):

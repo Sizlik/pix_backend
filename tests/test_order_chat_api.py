@@ -45,7 +45,6 @@ class StubOrderChatService:
                 )
                 for index, upload in enumerate(uploads)
             ],
-            delivery_state="pending",
         )
 
     async def get_attachment(self, user, attachment_id):
@@ -83,6 +82,7 @@ def test_order_message_accepts_text_and_repeated_files():
     assert response.status_code == 201
     assert response.json()["message"] == "Где заказ?"
     assert len(response.json()["attachments"]) == 2
+    assert "delivery_state" not in response.json()
 
 
 def test_empty_message_and_files_is_rejected():
