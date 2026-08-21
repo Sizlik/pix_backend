@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-21
 
-**Status:** Approved in design discussion; awaiting written-spec review
+**Status:** Approved
 
 **Repositories:** `pix_backend`, `../pix_frontend_v2`
 
