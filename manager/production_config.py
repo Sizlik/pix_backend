@@ -84,6 +84,11 @@ def _validate_order_chat(
         _add(issues, "ENABLE_MOYSKLAD_ORDER_CHAT", "must be enabled")
     _require_text(issues, "MOYSKLAD_LOGIN", settings.moysklad_login)
     _require_secret(issues, "MOYSKLAD_PASSWORD", settings.moysklad_password)
+    _require_strong_secret(
+        issues,
+        "MOYSKLAD_CHAT_EXTENSION_SECRET",
+        settings.moysklad_chat_extension_secret,
+    )
 
     webhook_secret = _secret_value(settings.moysklad_order_chat_webhook_secret)
     if not WEBHOOK_SECRET_PATTERN.fullmatch(webhook_secret):

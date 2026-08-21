@@ -84,6 +84,7 @@ def test_order_chat_preflight_names_every_missing_runtime_dependency():
         "ENABLE_MOYSKLAD_ORDER_CHAT",
         "MOYSKLAD_LOGIN",
         "MOYSKLAD_PASSWORD",
+        "MOYSKLAD_CHAT_EXTENSION_SECRET",
         "MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET",
         "MINIO_ENDPOINT",
         "MINIO_ACCESS_KEY",
@@ -96,6 +97,7 @@ def test_order_chat_preflight_accepts_complete_host_network_configuration():
         enable_moysklad_order_chat=True,
         moysklad_login="account@example.com",
         moysklad_password="moysklad-api-token",
+        moysklad_chat_extension_secret="x" * 32,
         moysklad_order_chat_webhook_secret=(
             "order_chat_webhook_secret_0123456789ABCDEF"
         ),
@@ -107,6 +109,25 @@ def test_order_chat_preflight_accepts_complete_host_network_configuration():
     assert validate_production_settings(settings, require_order_chat=True) == ()
 
 
+def test_order_chat_preflight_rejects_short_extension_secret():
+    settings = production_settings(
+        enable_moysklad_order_chat=True,
+        moysklad_login="account@example.com",
+        moysklad_password="moysklad-api-token",
+        moysklad_chat_extension_secret="x" * 31,
+        moysklad_order_chat_webhook_secret=(
+            "order_chat_webhook_secret_0123456789ABCDEF"
+        ),
+        minio_endpoint="localhost:9000",
+        minio_access_key="pix-order-chat",
+        minio_secret_key="minio-secret-that-is-long-enough",
+    )
+
+    assert issue_names(settings, require_order_chat=True) == {
+        "MOYSKLAD_CHAT_EXTENSION_SECRET"
+    }
+
+
 def test_preflight_never_returns_secret_or_sensitive_values():
     sensitive_values = {
         "database-secret-value",
@@ -115,6 +136,7 @@ def test_preflight_never_returns_secret_or_sensitive_values():
         "redis-secret-value",
         "moysklad-login-value",
         "moysklad-password-value",
+        "extension-secret-value",
         "webhook/secret/value",
         "minio-access-value",
         "minio-secret-value",
@@ -131,6 +153,7 @@ def test_preflight_never_returns_secret_or_sensitive_values():
         enable_moysklad_order_chat=True,
         moysklad_login="moysklad-login-value",
         moysklad_password="moysklad-password-value",
+        moysklad_chat_extension_secret="extension-secret-value",
         moysklad_order_chat_webhook_secret="webhook/secret/value",
         minio_endpoint="https://minio.invalid/path",
         minio_access_key="minio-access-value",
@@ -228,6 +251,7 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "BITRIX_LINK",
         "MOYSKLAD_LOGIN",
         "MOYSKLAD_PASSWORD",
+        "MOYSKLAD_CHAT_EXTENSION_SECRET",
         "MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET",
         "MINIO_ENDPOINT",
         "MINIO_ACCESS_KEY",
@@ -253,6 +277,7 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "BITRIX_LINK",
         "MOYSKLAD_LOGIN",
         "MOYSKLAD_PASSWORD",
+        "MOYSKLAD_CHAT_EXTENSION_SECRET",
         "MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET",
         "MINIO_ACCESS_KEY",
         "MINIO_SECRET_KEY",

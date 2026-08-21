@@ -30,6 +30,7 @@ must be supplied through the production secret store or ignored server `.env`.
 | `BITRIX_LINK` | Bitrix | If Bitrix endpoints are enabled | Yes | HTTPS webhook base URL | Authenticated Bitrix REST base |
 | `MOYSKLAD_LOGIN` | MoySklad | Yes for full product behavior | Sensitive | Account login | MoySklad Basic authentication |
 | `MOYSKLAD_PASSWORD` | MoySklad | Yes for full product behavior | Yes | Account password/token | MoySklad Basic authentication |
+| `MOYSKLAD_CHAT_EXTENSION_SECRET` | Order chat | When operator chat is enabled | Yes | Strong random value of at least 32 characters | Shared credential entered on trusted extension workstations; never expose it in URLs or logs |
 | `MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET` | Order chat | When order chat is enabled | Yes | Long random URL-safe value | Authenticates the MoySklad webhook path; never expose it to the browser or logs |
 | `MINIO_ENDPOINT` | Order chat | When order chat is enabled | No | `host:port` without scheme | MinIO S3 API endpoint |
 | `MINIO_ACCESS_KEY` | Order chat | When order chat is enabled | Sensitive | MinIO account name | MinIO API authentication |
@@ -71,6 +72,7 @@ ENABLE_MOYSKLAD_ORDER_CHAT=
 BITRIX_LINK=
 MOYSKLAD_LOGIN=
 MOYSKLAD_PASSWORD=
+MOYSKLAD_CHAT_EXTENSION_SECRET=
 MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET=
 MINIO_ENDPOINT=
 MINIO_ACCESS_KEY=

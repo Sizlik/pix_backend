@@ -12,6 +12,7 @@ from manager.chat_outbox import OrderChatOutboxWorker
 from manager.chat_storage import MinioObjectStorage
 from manager.moysklad_order_chat import MoySkladOrderChatSynchronizer
 from manager.order_chat import OrderChatAccessPolicy, OrderChatService
+from manager.order_chat_auth import OperatorChatAuthenticator
 
 
 @lru_cache
@@ -47,6 +48,12 @@ def get_order_chat_repository() -> OrderChatRepository:
 def get_order_chat_access_policy() -> OrderChatAccessPolicy:
     settings = get_settings()
     return OrderChatAccessPolicy(MoySkladOrderChatRepository(settings))
+
+
+def get_operator_chat_authenticator() -> OperatorChatAuthenticator:
+    return OperatorChatAuthenticator(
+        get_settings().require_chat_extension_secret()
+    )
 
 
 def get_order_chat_webhook_receiver():

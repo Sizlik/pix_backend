@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     next_public_backend_url: str | None = None
     pgadmin_default_email: str | None = None
     pgadmin_default_password: SecretStr | None = None
+    moysklad_chat_extension_secret: SecretStr | None = None
     moysklad_order_chat_webhook_secret: SecretStr | None = None
     minio_endpoint: str | None = None
     minio_access_key: str | None = None
@@ -105,6 +106,12 @@ class Settings(BaseSettings):
             attachment_max_count=self.chat_attachment_max_count,
             outbox_max_attempts=self.chat_outbox_max_attempts,
             outbox_base_delay_seconds=self.chat_outbox_base_delay_seconds,
+        )
+
+    def require_chat_extension_secret(self) -> str:
+        return require_secret(
+            self.moysklad_chat_extension_secret,
+            "moysklad chat extension",
         )
 
     @model_validator(mode="after")
