@@ -59,7 +59,29 @@ The source build downloads the pinned Git tag and Go modules, so the first build
 powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1
 ```
 
-This runs the scoped Ruff baseline and all pytest tests. Tests cover settings, production-secret validation, offline import, health, 503 mapping, missing integration credentials, immutable order chat, projection/retry rules, webhook deduplication, and multi-worker fanout using local fakes.
+This runs the scoped Ruff baseline and all pytest tests. Tests cover settings,
+production-secret validation, offline import, health, 503 mapping, missing
+integration credentials, immutable site/operator order chat, attachment
+isolation, removal of the MoySklad projection runtime, NGINX operator limits,
+and multi-worker fanout using local fakes.
+
+The adjacent frontend owns the Chrome extension workspace. Its deterministic
+check includes unit/type/lint, Manifest validation, production builds and an
+unpacked-extension Chromium smoke:
+
+```powershell
+Push-Location ..\pix_frontend_v2
+npm.cmd ci
+npm.cmd run check:extension
+Pop-Location
+```
+
+The extension defaults to `http://localhost:8000/api_v1`. Loading it unpacked
+is documented in `../pix_frontend_v2/moysklad-chat-extension/README.md`.
+Entering a local shared secret and exercising a real order requires deliberate
+local MoySklad credentials, MinIO, Redis, a linked user/order and
+`ENABLE_MOYSKLAD_ORDER_CHAT=true`; ordinary checks use fakes and keep the flag
+false.
 
 For a manual startup smoke:
 
@@ -106,38 +128,26 @@ Set `ENABLE_SCHEDULER=true` only for an approved integration run with all MoySkl
 
 Known warnings currently come from passlib packaging, SQLAlchemy `as_scalar()`, and the pinned FastAPI/httpx test stack. They are recorded debt; new warnings from touched code should still be investigated.
 
-## Production rollout and removal migration
+## Production rollout
 
-This is an operator workflow, not an automated setup sequence. Ordinary local
-checks never mutate a deployed database or register a webhook.
+Production activation is an operator workflow, not an automated setup
+sequence. Ordinary local checks never mutate a deployed database, install a
+secret, deploy an artifact, or remove a webhook.
 
-1. Merge only missing keys from `.env.production.example` into the ignored
-   production environment. Preserve working values and keep
-   `ENABLE_MOYSKLAD_ORDER_CHAT=false` during the initial image rollout.
-2. Build and deploy the frontend and backend images first. Record their exact
-   tags, validate the base production configuration, and verify `/api_v1/health`.
-3. The order-chat preflight requires MoySklad, webhook, MinIO, PostgreSQL,
-   Redis, authentication, and HTTPS/CORS settings. It has no side-notification
-   provider requirement:
+Follow
+`docs/operations/moysklad-chat-extension-cutover.md` for the Chrome-extension
+cutover, including backup/MinIO checks, exact-revision review, staged enablement,
+two-way text/file smoke, legacy webhook removal and rollback. The runbook may
+apply only `e3b7c9d1a204` when production is already exactly at
+`d4e5f6a7b8c9`; it never runs `alembic upgrade head`.
 
-   ```bash
-   python scripts/check_production_config.py --require-order-chat
-   ```
-
-4. Revision `d4e5f6a7b8c9` backfills eligible legacy order messages, rewrites
-   their `ORDER_MESSAGE` notification targets, and removes the obsolete schema.
-   It is destructive and manual. Follow its production runbook under
-   `docs/operations/` for target review, count-only
-   audits, validated backup, the separately approved exact upgrade command, and
-   post-migration checks. Do not use `alembic upgrade head` for this change.
-5. Enable order chat only after MinIO persistence and the MoySklad projection
-   have been validated. Webhook preview performs a live MoySklad request; apply
-   registration only with separate approval.
-6. In a staging order, verify site text/files, the MoySklad comment and
-   `[КЛИЕНТ]` reply format, website `ORDER_MESSAGE` notification, Redis/WebSocket
-   fanout, owner isolation, deduplication, and immutable history controls.
+Revision `d4e5f6a7b8c9` remains a separate destructive historical migration with
+its own removal runbook. If production has not already applied it, stop the
+extension cutover and complete that independent approval/recovery process
+first. Later removal of retained projection-only tables is another destructive
+operation and is outside both local setup and the extension cutover.
 
 The application exposes only order-specific chat. There is no general-support
-chat fallback. Before the removal migration, application rollback uses the
-captured image tags. After it, deleted values require the validated backup;
-the downgrade recreates empty compatibility structures only.
+chat fallback. New messages and attachments remain in PostgreSQL/MinIO and are
+transported by the website and Chrome extension; they are not rendered into
+MoySklad comments/files.

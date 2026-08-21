@@ -66,5 +66,14 @@ $ruffTargets = @(
 
 & ".\.venv\Scripts\python.exe" -m ruff check @ruffTargets
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$alembicHeads = @(& ".\.venv\Scripts\python.exe" -m alembic heads)
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$headLines = @($alembicHeads | Where-Object { $_ -match "\(head\)" })
+if ($headLines.Count -ne 1 -or $headLines[0] -notmatch "^e3b7c9d1a204\s") {
+    Write-Error "Expected one Alembic head at e3b7c9d1a204."
+    exit 1
+}
+
 & ".\.venv\Scripts\python.exe" -m pytest tests -q
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

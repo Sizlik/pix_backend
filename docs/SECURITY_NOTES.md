@@ -19,7 +19,7 @@ Do not test old credentials to determine whether they still work. Do not rewrite
 - `.env`, `.env.local`, `.venv`, build output, Playwright artifacts, and local logs must remain ignored.
 - Browser code is public. `NEXT_PUBLIC_BACKEND_URL` may contain only a public API base, never credentials or private network tokens.
 - Missing integration configuration must produce a sanitized `IntegrationNotConfigured` error and HTTP 503.
-- `MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET` is embedded in a URL path. NGINX disables access logging for only that exact prefix, registration output redacts the final segment, and application code must never log the unredacted request target. Rotate it by deploying a new secret, restarting, registering the new exact URL, and deleting only the old webhook after explicit approval.
+- `MOYSKLAD_CHAT_EXTENSION_SECRET` belongs only in the backend secret store and trusted operator Chrome profiles. REST sends it as `X-Pix-Chat-Secret`; WebSocket sends it in the first authentication frame. Never put it in a URL, build variable, exception, trace, screenshot, or log. `chrome.storage.local` is not encrypted, so workstation/profile compromise requires rotation.
 - MinIO access and secret keys belong only in the backend/container secret store. Never expose them through `NEXT_PUBLIC_*`, browser object URLs, MoySklad comments, filenames, or order-chat messages.
 
 ## Runtime trust boundaries
@@ -33,9 +33,9 @@ Do not test old credentials to determine whether they still work. Do not rewrite
 ## Immutable order-chat controls
 
 - PostgreSQL is the source of truth for message history. Database triggers reject `UPDATE` and `DELETE` on canonical message and attachment rows; application APIs expose no edit/delete operation.
-- Every history read, attachment download, WebSocket order-room connection, site send, and inbound MoySklad delivery performs or inherits a fresh customer-order owner check. Unauthorized and missing orders deliberately converge on `404`/`4404` behavior.
+- Every history read, attachment download, WebSocket order-room connection, and site/operator send performs or inherits a fresh MoySklad customer-order and counterparty-link check. Unauthorized and missing orders deliberately converge on `404`/`4404` behavior after transport authentication.
 - Attachments are limited to ten files and 20 MiB each. Filename extensions and byte signatures are checked server-side for the allowlist; browser checks are usability only. Stored object keys do not trust the original filename.
-- Only text below the manager reply marker and MoySklad files prefixed `[КЛИЕНТ]` are client-visible. Other manager files remain internal.
+- New chat content is never parsed from or projected into MoySklad comments/files. The Chrome extension renders React text and downloads attachments only through order-scoped authenticated endpoints; historical MoySklad comments/files remain outside canonical history.
 - PostgreSQL and the MinIO volume must be backed up and restored as one retention set. A database-only restore can leave attachment metadata without bytes; a volume-only restore loses ownership and immutable-history links.
 - Revision `d4e5f6a7b8c9` deletes obsolete messaging rows, tables, and identity values. It must be applied manually only after the backup has been restored successfully in isolation; its downgrade recreates empty compatibility structures and cannot recover deleted values. Follow its production runbook under `docs/operations/`.
 

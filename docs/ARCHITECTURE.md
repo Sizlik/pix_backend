@@ -7,6 +7,9 @@ flowchart LR
     U["Browser user"] --> F["Next.js frontend"]
     F -->|"REST /api_v1"| A["FastAPI backend"]
     F -->|"WebSocket /api_v1/chat/ws and /api_v1/notifications/ws"| A
+    O["MoySklad operator"] --> M["MoySklad web app"]
+    O --> X["Pix Chrome extension"]
+    X -->|"Secret-authenticated operator REST/WebSocket"| A
     A --> P[("PostgreSQL")]
     A --> R[("Redis")]
     A --> S[("MinIO")]
@@ -53,8 +56,9 @@ All paths below are relative to `/api_v1`.
 | Payments | `/payment`, `/payment/vault_courses` | MoySklad payments and cached exchange rates | MoySklad, Redis, Frankfurter |
 | Organizations | `/organizations/*` | Owners, organization users, aggregate orders | PostgreSQL, MoySklad, Privoz |
 | Notifications | `/notifications/`, `/notifications/unread-count`, `/notifications/read*`, `/notifications/ws` | Create, enrich, list, mark `ORDER_UPDATED`/`ORDER_MESSAGE` notifications, and stream each user's absolute unread count | PostgreSQL, Redis pub/sub, MoySklad, order chat |
-| Order chat | `/chat/ws`, `/chat/orders/{order_id}/messages`, `/chat/attachments/{id}` | Immutable customer-order chat, files, pagination, and room-scoped real-time delivery | Redis JWT/pub/sub, PostgreSQL, MinIO, MoySklad |
-| Integrations | `/integration/bitrix/*`, `/integration/orders/*`, `/integration/webhooks/*`, `/integration/webhooks/order-chat/{secret}`, `/integration/vaults/*` | Bitrix CRUD, service callbacks, order/invoice/order-chat webhooks, rate feed | Bitrix, MoySklad, PostgreSQL, external HTTP |
+| Customer order chat | `/chat/ws`, `/chat/orders/{order_id}/messages`, `/chat/attachments/{id}` | Immutable customer-order chat, files, pagination, and owner-scoped real-time delivery | Redis JWT/pub/sub, PostgreSQL, MinIO, MoySklad |
+| Operator order chat | `/chat/operator/ws`, `/chat/operator/orders/{order_id}/messages`, `/chat/operator/orders/{order_id}/attachments/{id}` | Chrome-extension history, manager sends/downloads, shared-secret authentication, and linked-order verification | Extension secret, Redis pub/sub, PostgreSQL, MinIO, MoySklad |
+| Integrations | `/integration/bitrix/*`, `/integration/orders/*`, `/integration/webhooks/*`, `/integration/vaults/*` | Bitrix CRUD, service callbacks, order/invoice webhooks, rate feed | Bitrix, MoySklad, PostgreSQL, external HTTP |
 
 `routes/invoices.py` exists but is not mounted by `main.py` or the integration router. Treat unmounted route modules as inactive until wiring and tests are added.
 
@@ -69,8 +73,8 @@ All paths below are relative to `/api_v1`.
 | `transaction` | User balance changes |
 | `notifications` | Unread/read `ORDER_UPDATED` and `ORDER_MESSAGE` events referencing external orders or retained order-chat messages |
 | `order_chat_message`, `order_chat_attachment` | Append-only canonical order history and MinIO object metadata; PostgreSQL triggers reject updates and deletes |
-| `order_chat_state`, `moysklad_order_file` | Last observed MoySklad projection and deduplicated remote file observations |
-| `chat_outbox_event` | Transactional order projection work, retry state, and webhook deduplication |
+| `order_chat_state` | Durable order-to-client room ownership established after a fresh MoySklad order lookup |
+| `moysklad_order_file`, `chat_outbox_event` | Retained historical projection schema; no active runtime reads or writes it, and later removal is a separate destructive operation |
 | `privoz_order` | Scraped Privoz order number and state cache |
 | Redis | JWT token strategy, verification/reset code mapping, FastAPI cache, hourly currency-rate cache, multi-worker chat pub/sub, and per-user unread-notification count pub/sub |
 | MinIO `pix-order-chat` bucket | Canonical bytes for site and MoySklad order-chat attachments |
@@ -81,7 +85,7 @@ SQLAlchemy models are imported through the application graph rather than a singl
 
 | Integration | Used for | Configuration behavior |
 | --- | --- | --- |
-| MoySklad | Counterparties, products, customer orders, invoices, payments, exports, reports, and the operator-facing order-chat projection | Credentials resolved lazily; central to order flows |
+| MoySklad | Counterparties, products, customer orders, invoices, payments, exports, reports, and fresh order/client verification for both chat transports | Credentials resolved lazily; central to order flows; chat messages/files are not projected into MoySklad |
 | Bitrix24 | Contacts, deals, products and deal product rows | Webhook base URL required when called |
 | Privoz | Login, scrape order states, sync local cache | Username/password required before an HTTP session starts |
 | SMTP.BZ | Verification and password-reset messages | Token required before send |
@@ -138,17 +142,19 @@ Customer edits are staged in the browser and saved through
 MoySklad order update. The successful response contains only the updated order
 and whether a change was made.
 
-For WebSocket chat, the client opens `/api_v1/chat/ws` with mandatory `auth` and `room` query parameters. The room must be a UUID for an order the current user owns; missing room closes with `4400`, authentication failure with `4401`, and an invalid or inaccessible room with `4404`. Connections remain local to each worker, while Redis pub/sub fans persisted order messages and durable delivery-state events out to every worker and browser tab. Sockets are outbound-only; clients create order messages and files through authenticated REST. There is no general-support room.
+For website WebSocket chat, the client opens `/api_v1/chat/ws` with mandatory `auth` and `room` query parameters. The room must be a UUID for an order the current user owns; missing room closes with `4400`, authentication failure with `4401`, and an invalid or inaccessible room with `4404`. Connections remain local to each worker, while Redis pub/sub fans persisted order messages out to every worker and browser tab. Sockets are outbound-only; clients create order messages and files through authenticated REST. There is no general-support room.
+
+The Chrome extension opens `/api_v1/chat/operator/ws?room={order_id}` and sends the shared extension secret in the first JSON frame; the secret never belongs in a URL. Operator REST sends it only as `X-Pix-Chat-Secret`. After authentication, both transports resolve the current MoySklad order and its counterparty, require a linked Pix user, and use the same PostgreSQL room, MinIO objects, Redis fanout, validation, pagination, and immutable response model. Operator WebSocket sends are rejected; manager messages and files use operator REST. A bad secret is `401`/`4401`, an unlinked or inaccessible order is `404`/`4404`, and a temporarily unavailable MoySklad lookup is `503`.
 
 For notification counters, the dashboard first reads `GET /api_v1/notifications/unread-count`, then subscribes to `/api_v1/notifications/ws?auth=...`. The server publishes an absolute `{type: "notification_count", unread_count: N, version: V}` snapshot on a user-scoped Redis channel after a notification is committed or marked read. A mandatory per-user Redis lock with a bounded critical section serializes each count query with its publication; the initial WebSocket snapshot uses the same pub/sub path. Redis increments a per-user version, and the browser discards older versions, so queued snapshots cannot overwrite newer values across workers. If the lock or Redis is unavailable, the database mutation and REST count still succeed but no unordered realtime event is emitted. The public create route requires authentication and forces the recipient to the current user; trusted integrations create notifications through the manager layer. Hovering or clicking an unread row marks only that user's notification as read; `POST /api_v1/notifications/read` performs one bulk update for all of that user's unread notifications. The browser serializes local read mutations, applies optimistic counter changes, rejects delayed REST snapshots after newer local/WebSocket state, and reconciles on responses, focus, or reconnect.
 
-Order chat has two durable flows. From the site, the backend verifies current order ownership, stores an immutable PostgreSQL message and MinIO objects in one use case, and commits a `sync_order` outbox event. The worker projects the bounded transcript into the standard MoySklad customer-order `description` and uploads client mirror/history files. From MoySklad, the fast secret-path webhook commits inbound work, then a worker parses text below the reply marker and only files prefixed `[КЛИЕНТ]`, rechecks the owner, stores new immutable history/MinIO objects, creates a website `ORDER_MESSAGE` notification, and publishes through Redis/WebSocket to the site. Projection rejections are logged without message bodies. Internal manager files stay hidden. MoySklad is an operator projection; PostgreSQL and MinIO are canonical history.
+Order chat has one canonical history and two transports. A website client send verifies order ownership, stores an immutable PostgreSQL message plus MinIO objects, and publishes the persisted response through Redis. A Chrome-extension manager send verifies the current MoySklad order/counterparty link, stores source/origin `extension`, creates the website `ORDER_MESSAGE` notification in the same transaction, and publishes the same response shape to site and operator sockets. REST history and POST responses are merged with WebSocket events by immutable message ID. There is no active description/file projection, order-chat webhook, outbox worker, reply marker, or MoySklad chat-file ingestion runtime. Historical comments/files already rendered in MoySklad remain external historical data; PostgreSQL and MinIO are canonical for all new chat activity.
 
 When `ENABLE_SCHEDULER=true`, the FastAPI lifespan starts APScheduler with an hourly `change_states_on_moysklad` job. The job scrapes Privoz, reads MoySklad orders/purchases, updates states, and writes website `ORDER_UPDATED` notifications. Local default is false because this flow contacts production services.
 
 ## Deployment topology
 
-The production Compose file describes PostgreSQL, source-built pinned MinIO, a prebuilt frontend image, backend image, and pgAdmin. NGINX configuration proxies `/` to frontend, `/api_v1/` and WebSocket upgrades to backend, applies a `205m` cap only to order-chat uploads, disables access logging for the secret webhook path, and proxies `/pgadmin/` to pgAdmin. TLS files are mounted outside the repository.
+The production Compose file describes PostgreSQL, source-built pinned MinIO, a prebuilt frontend image, backend image, and pgAdmin. NGINX configuration proxies `/` to frontend, `/api_v1/` and WebSocket upgrades to backend, keeps the existing customer chat routes, and gives operator REST and WebSocket exact rate-limit zones. Operator REST has a `205m` request cap for ten 20 MiB attachments plus multipart overhead; the exact operator WebSocket location has upgrade headers and no upload allowance. The legacy order-chat webhook prefix remains access-log-suppressed only for rollback compatibility until its separately approved cleanup. TLS files are mounted outside the repository.
 
 GitHub Actions deploys pushes to `main` over SSH, pulls on the server, builds
 the backend image, runs the sanitized base production preflight, validates

@@ -42,6 +42,7 @@ must be supplied through the production secret store or ignored server `.env`.
 | `PRIVOZ_PASSWORD` | Privoz | If Privoz/scheduler flows are enabled | Yes | Account password | Privoz web login |
 | `MAILERSEND_TOKEN` | Email | Yes for verify/reset flows | Yes | API token | SMTP.BZ authorization header |
 | `NEXT_PUBLIC_BACKEND_URL` | Frontend build | Yes | No | Absolute public HTTPS URL ending in `/api_v1` | Browser API base; build-time public value |
+| `PIX_EXTENSION_BACKEND_URL` | Chrome extension build | Yes for packaged extension | No | Absolute public HTTPS URL ending in `/api_v1` | Fixed operator-chat API base and exact Manifest host-permission origin |
 | `PGADMIN_DEFAULT_EMAIL` | Production Compose | If pgAdmin is enabled | Sensitive | Email address | Initial pgAdmin account |
 | `PGADMIN_DEFAULT_PASSWORD` | Production Compose | If pgAdmin is enabled | Yes | Strong password | Initial pgAdmin account |
 
@@ -85,6 +86,13 @@ PGADMIN_DEFAULT_EMAIL=
 PGADMIN_DEFAULT_PASSWORD=
 ```
 
+The adjacent extension build has one separate public variable; do not put it in
+the backend `.env`:
+
+```dotenv
+PIX_EXTENSION_BACKEND_URL=
+```
+
 The GitHub deployment workflow separately consumes repository/action secrets named `HOST`, `USERNAME`, `PASSWORD`, and `PORT`. They are not application `.env` variables.
 
 ## Local defaults
@@ -97,3 +105,11 @@ The order-chat production preflight has no notification-provider settings. It
 requires MoySklad, the extension secret, MinIO, Redis, PostgreSQL, and the normal
 authentication/browser configuration. Website `ORDER_UPDATED` and
 `ORDER_MESSAGE` notifications use PostgreSQL and Redis.
+
+`PIX_EXTENSION_BACKEND_URL` is consumed by the adjacent
+`pix_frontend_v2/moysklad-chat-extension` Vite build, not by `config.Settings`.
+It is public origin metadata and must never contain the shared secret, URL
+credentials, query parameters, or a fragment. Outside local development it
+must use HTTPS. The extension reads `MOYSKLAD_CHAT_EXTENSION_SECRET` only from a
+human-entered value stored on a trusted workstation; that backend secret is
+never a frontend build variable.
