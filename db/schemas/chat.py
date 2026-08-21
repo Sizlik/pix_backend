@@ -15,11 +15,13 @@ class MessageSource(StrEnum):
     SITE = "site"
     MOYSKLAD = "moysklad"
     LEGACY = "legacy"
+    EXTENSION = "extension"
 
 
 class AttachmentOrigin(StrEnum):
     SITE = "site"
     MOYSKLAD = "moysklad"
+    EXTENSION = "extension"
 
 
 class OrderChatAttachmentResponse(BaseModel):

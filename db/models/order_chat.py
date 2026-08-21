@@ -39,7 +39,7 @@ class OrderChatMessage(Base):
             name="ck_order_chat_sender_kind",
         ),
         CheckConstraint(
-            "source IN ('site', 'moysklad', 'legacy')",
+            "source IN ('site', 'moysklad', 'legacy', 'extension')",
             name="ck_order_chat_source",
         ),
         Index(
@@ -68,7 +68,7 @@ class OrderChatAttachment(Base):
     __table_args__ = (
         CheckConstraint("size_bytes > 0", name="ck_order_chat_attachment_size"),
         CheckConstraint(
-            "origin IN ('site', 'moysklad')",
+            "origin IN ('site', 'moysklad', 'extension')",
             name="ck_order_chat_attachment_origin",
         ),
     )

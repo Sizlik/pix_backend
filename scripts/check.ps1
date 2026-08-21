@@ -10,6 +10,7 @@ $ruffTargets = @(
     "alembic/versions/c8f2a4e6d901_order_chat_delivery.py",
     "alembic/versions/b7e1d3a9f4c2_add_user_addresses.py",
     "alembic/versions/d4e5f6a7b8c9_remove_telegram.py",
+    "alembic/versions/e3b7c9d1a204_allow_extension_chat_source.py",
     "db/postgres.py",
     "db/redis.py",
     "db/address_repository.py",
