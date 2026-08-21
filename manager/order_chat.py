@@ -163,7 +163,6 @@ class OrderChatService:
                 source="site",
                 body=normalized_body,
                 attachments=new_attachments,
-                outbox_events=(),
             )
         except Exception:
             for key in stored_keys:
@@ -207,8 +206,6 @@ class OrderChatService:
                 source="extension",
                 external_key=None,
                 attachments=new_attachments,
-                outbox_events=(),
-                moysklad_files=(),
             )
         except Exception:
             for key in stored_keys:

@@ -1,12 +1,12 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 
 from db.models.notifications import Notifications
-from db.order_chat_repository import NewAttachment, OrderChatRepository, object_key, retry_at
+from db.order_chat_repository import NewAttachment, OrderChatRepository, object_key
 
 
 def test_object_key_never_contains_client_filename():
@@ -19,14 +19,6 @@ def test_object_key_never_contains_client_filename():
         "messages/00000000-0000-0000-0000-000000000002/"
         "attachments/00000000-0000-0000-0000-000000000003"
     )
-
-
-def test_retry_backoff_is_exponential_and_capped_at_one_hour():
-    now = datetime(2026, 8, 10, tzinfo=timezone.utc)
-
-    assert retry_at(now, attempts=1, base_seconds=5, jitter_seconds=0) == now + timedelta(seconds=5)
-    assert retry_at(now, attempts=4, base_seconds=5, jitter_seconds=0) == now + timedelta(seconds=40)
-    assert retry_at(now, attempts=20, base_seconds=5, jitter_seconds=0) == now + timedelta(hours=1)
 
 
 class TransactionSpySession:
@@ -97,15 +89,6 @@ class TransactionSpyRepository(OrderChatRepository):
             for item in attachments
         )
 
-    async def _insert_outbox_events(self, session, events):
-        assert session.in_transaction
-        self.actions.append(("outbox", events))
-
-    async def _insert_moysklad_files(self, session, files):
-        assert session.in_transaction
-        self.actions.append(("moysklad_files", files))
-
-
 async def test_manager_message_and_notification_share_one_transaction():
     session = TransactionSpySession()
     repository = TransactionSpyRepository(session)
@@ -137,8 +120,6 @@ async def test_manager_message_and_notification_share_one_transaction():
     assert [action for action, _ in repository.actions] == [
         "message",
         "attachments",
-        "outbox",
-        "moysklad_files",
     ]
     assert len(session.added) == 1
     notification = session.added[0]

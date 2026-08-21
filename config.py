@@ -20,11 +20,8 @@ class OrderChatSettings:
     secret_key: str
     bucket: str
     secure: bool
-    webhook_secret: str
     attachment_max_bytes: int
     attachment_max_count: int
-    outbox_max_attempts: int
-    outbox_base_delay_seconds: int
 
 
 class Settings(BaseSettings):
@@ -66,7 +63,6 @@ class Settings(BaseSettings):
     pgadmin_default_email: str | None = None
     pgadmin_default_password: SecretStr | None = None
     moysklad_chat_extension_secret: SecretStr | None = None
-    moysklad_order_chat_webhook_secret: SecretStr | None = None
     minio_endpoint: str | None = None
     minio_access_key: str | None = None
     minio_secret_key: SecretStr | None = None
@@ -74,8 +70,6 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     chat_attachment_max_bytes: int = Field(20 * 1024 * 1024, gt=0)
     chat_attachment_max_count: int = Field(10, gt=0)
-    chat_outbox_max_attempts: int = Field(8, gt=0)
-    chat_outbox_base_delay_seconds: int = Field(5, gt=0)
 
     @property
     def database_url(self) -> str:
@@ -91,21 +85,14 @@ class Settings(BaseSettings):
         endpoint = require_value(self.minio_endpoint, "moysklad order chat")
         access_key = require_value(self.minio_access_key, "moysklad order chat")
         secret_key = require_secret(self.minio_secret_key, "moysklad order chat")
-        webhook_secret = require_secret(
-            self.moysklad_order_chat_webhook_secret,
-            "moysklad order chat",
-        )
         return OrderChatSettings(
             endpoint=endpoint,
             access_key=access_key,
             secret_key=secret_key,
             bucket=self.minio_bucket,
             secure=self.minio_secure,
-            webhook_secret=webhook_secret,
             attachment_max_bytes=self.chat_attachment_max_bytes,
             attachment_max_count=self.chat_attachment_max_count,
-            outbox_max_attempts=self.chat_outbox_max_attempts,
-            outbox_base_delay_seconds=self.chat_outbox_base_delay_seconds,
         )
 
     def require_chat_extension_secret(self) -> str:

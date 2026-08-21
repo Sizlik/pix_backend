@@ -63,16 +63,22 @@ def test_telegram_and_bot_routes_are_not_mounted():
 def test_capabilities_report_the_app_settings_feature_flag(monkeypatch):
     from main import create_app
 
-    runtime = SimpleNamespace(
-        storage=SimpleNamespace(ensure_bucket=AsyncMock()),
-        worker=SimpleNamespace(start=AsyncMock(), stop=AsyncMock()),
-    )
-    monkeypatch.setattr("main.get_order_chat_runtime", lambda settings, realtime: runtime)
+    storage = SimpleNamespace(ensure_bucket=AsyncMock())
+    built_from = []
+
+    def build_storage(chat_settings):
+        built_from.append(chat_settings)
+        return storage
+
+    monkeypatch.setattr("main.build_order_chat_storage", build_storage)
     app = create_app(
         Settings(
             _env_file=None,
             app_env="test",
             enable_moysklad_order_chat=True,
+            minio_endpoint="localhost:9000",
+            minio_access_key="test",
+            minio_secret_key="test-secret",
         )
     )
 
@@ -81,3 +87,5 @@ def test_capabilities_report_the_app_settings_feature_flag(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"moysklad_order_chat": True}
+    assert built_from[0].endpoint == "localhost:9000"
+    assert built_from[0].access_key == "test"

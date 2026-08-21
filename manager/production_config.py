@@ -12,7 +12,6 @@ from config import (
 )
 
 MINIMUM_SECRET_LENGTH = 32
-WEBHOOK_SECRET_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,}$")
 BUCKET_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 
@@ -90,13 +89,6 @@ def _validate_order_chat(
         settings.moysklad_chat_extension_secret,
     )
 
-    webhook_secret = _secret_value(settings.moysklad_order_chat_webhook_secret)
-    if not WEBHOOK_SECRET_PATTERN.fullmatch(webhook_secret):
-        _add(
-            issues,
-            "MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET",
-            "must be a long URL-safe secret",
-        )
     if not _is_minio_endpoint(settings.minio_endpoint):
         _add(issues, "MINIO_ENDPOINT", "must be host:port without a URL scheme")
     _require_text(issues, "MINIO_ACCESS_KEY", settings.minio_access_key)

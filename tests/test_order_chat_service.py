@@ -55,7 +55,7 @@ class FakeStorage:
 
 class FakeRepository:
     def __init__(self, fail=False):
-        self.events = []
+        self.created = None
         self.fail = fail
 
     async def ensure_state(self, order_id, client_id):
@@ -64,7 +64,7 @@ class FakeRepository:
     async def create_message(self, **values):
         if self.fail:
             raise RuntimeError("database unavailable")
-        self.events.extend(values["outbox_events"])
+        self.created = values
         attachments = tuple(
             SimpleNamespace(
                 id=item.id,
@@ -133,7 +133,7 @@ async def test_file_only_message_has_no_projection_event_or_delivery_state():
     assert result.message == ""
     assert result.sender_label == "Клиент"
     assert len(result.attachments) == 1
-    assert repository.events == []
+    assert "outbox_events" not in repository.created
     assert not hasattr(result, "delivery_state")
     assert len(storage.objects) == 1
 

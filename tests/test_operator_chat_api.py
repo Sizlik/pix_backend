@@ -46,11 +46,8 @@ def service_stub():
     )
 
 
-def runtime_stub():
-    return SimpleNamespace(
-        storage=SimpleNamespace(ensure_bucket=AsyncMock()),
-        worker=SimpleNamespace(start=AsyncMock(), stop=AsyncMock()),
-    )
+def storage_stub():
+    return SimpleNamespace(ensure_bucket=AsyncMock())
 
 
 @contextmanager
@@ -60,9 +57,11 @@ def operator_client(*, enabled=True, expected_secret="expected", service=None):
         _env_file=None,
         app_env="test",
         enable_moysklad_order_chat=enabled,
+        minio_endpoint="localhost:9000",
+        minio_access_key="test",
+        minio_secret_key="test-secret",
     )
-    runtime = runtime_stub()
-    with patch("main.get_order_chat_runtime", return_value=runtime):
+    with patch("main.build_order_chat_storage", return_value=storage_stub()):
         app = create_app(settings)
         app.dependency_overrides[get_order_chat_service] = lambda: service
         app.dependency_overrides[get_operator_chat_authenticator] = lambda: (

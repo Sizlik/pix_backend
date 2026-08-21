@@ -12,11 +12,12 @@ def test_order_chat_is_off_and_uses_exact_safe_limits_by_default():
     assert settings.minio_secure is False
     assert settings.chat_attachment_max_bytes == 20 * 1024 * 1024
     assert settings.chat_attachment_max_count == 10
-    assert settings.chat_outbox_max_attempts == 8
-    assert settings.chat_outbox_base_delay_seconds == 5
+    assert not hasattr(settings, "moysklad_order_chat_webhook_secret")
+    assert not hasattr(settings, "chat_outbox_max_attempts")
+    assert not hasattr(settings, "chat_outbox_base_delay_seconds")
 
 
-def test_enabled_order_chat_requires_storage_and_webhook_secrets():
+def test_enabled_order_chat_requires_storage_credentials():
     settings = Settings(
         _env_file=None,
         enable_moysklad_order_chat=True,
@@ -30,7 +31,6 @@ def test_enabled_order_chat_returns_secret_values_only_at_call_time():
     settings = Settings(
         _env_file=None,
         enable_moysklad_order_chat=True,
-        moysklad_order_chat_webhook_secret="webhook-secret",
         minio_endpoint="localhost:9000",
         minio_access_key="pix-local",
         minio_secret_key="pix-local-secret",
@@ -41,7 +41,8 @@ def test_enabled_order_chat_returns_secret_values_only_at_call_time():
     assert resolved.endpoint == "localhost:9000"
     assert resolved.access_key == "pix-local"
     assert resolved.secret_key == "pix-local-secret"
-    assert resolved.webhook_secret == "webhook-secret"
+    assert resolved.attachment_max_bytes == 20 * 1024 * 1024
+    assert resolved.attachment_max_count == 10
 
 
 def test_order_chat_limits_must_be_positive():

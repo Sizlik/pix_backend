@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict
 
 
 class SenderKind(StrEnum):
@@ -45,32 +45,3 @@ class OrderChatMessageResponse(BaseModel):
 class OrderChatPageResponse(BaseModel):
     items: list[OrderChatMessageResponse]
     next_before: UUID | None
-
-
-class MoySkladWebhookMeta(BaseModel):
-    type: str
-    href: HttpUrl
-
-
-class MoySkladWebhookEvent(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    meta: MoySkladWebhookMeta
-    action: str
-    accountId: UUID
-    updatedFields: list[str] = Field(default_factory=list)
-
-
-class MoySkladAuditContext(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    meta: MoySkladWebhookMeta
-    moment: str
-    uid: str
-
-
-class MoySkladWebhookPayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    auditContext: MoySkladAuditContext | None = None
-    events: list[MoySkladWebhookEvent]

@@ -267,8 +267,8 @@ async def test_manager_message_supports_text_file_only_and_mixed_messages(
 
     assert repository.created["source"] == "extension"
     assert repository.created["external_key"] is None
-    assert repository.created["outbox_events"] == ()
-    assert repository.created["moysklad_files"] == ()
+    assert "outbox_events" not in repository.created
+    assert "moysklad_files" not in repository.created
     assert all(item.origin == "extension" for item in repository.created["attachments"])
     assert len(repository.created["attachments"]) == attachment_count
     assert result.sender_kind.value == "manager"

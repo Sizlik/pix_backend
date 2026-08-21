@@ -6,10 +6,7 @@ import pytest
 import requests
 
 from config import Settings
-from db.moysklad_order_chat_repository import (
-    MoySkladOrderChatRepository,
-    MoySkladUpload,
-)
+from db.moysklad_order_chat_repository import MoySkladOrderChatRepository
 from errors import MoySkladOrderLookupUnavailable
 
 
@@ -41,27 +38,6 @@ class FakeSession:
             raise self.failure
         if self.response is not None:
             return self.response
-        if url.endswith("/files") and method == "GET":
-            return FakeResponse({"rows": []})
-        if url.endswith("/files") and method == "POST":
-            return FakeResponse(
-                [
-                    {
-                        "meta": {
-                            "href": (url + "/00000000-0000-0000-0000-000000000010"),
-                            "downloadHref": ("https://api.moysklad.ru/api/remap/1.2/download/file"),
-                        },
-                        "filename": "[ЧАТ-КЛИЕНТ][m] a.txt",
-                        "size": 5,
-                    }
-                ]
-            )
-        if url.endswith("/entity/webhook") and method == "GET":
-            return FakeResponse({"rows": []})
-        if url.endswith("/entity/webhook") and method == "POST":
-            return FakeResponse({"id": "webhook"})
-        if "/download/" in url and method == "GET":
-            return FakeResponse({}, content=b"downloaded")
         return FakeResponse(
             {
                 "id": "order",
@@ -134,64 +110,3 @@ async def test_get_order_raises_safe_error_for_invalid_json():
 
     assert str(raised.value) == "MoySklad order lookup unavailable"
     assert raised.value.__cause__ is None
-
-
-async def test_upload_uses_special_resource_base64_array_and_maps_response():
-    session = FakeSession()
-    repository = MoySkladOrderChatRepository(settings(), session=session)
-
-    result = await repository.upload_files(
-        UUID("00000000-0000-0000-0000-000000000001"),
-        [MoySkladUpload(filename="[ЧАТ-КЛИЕНТ][m] a.txt", content=b"hello")],
-    )
-
-    method, url, kwargs = session.calls[0]
-    assert method == "POST"
-    assert url.endswith("/entity/customerorder/00000000-0000-0000-0000-000000000001/files")
-    assert kwargs["json"] == [
-        {
-            "filename": "[ЧАТ-КЛИЕНТ][m] a.txt",
-            "content": "aGVsbG8=",
-        }
-    ]
-    assert result[0].filename == "[ЧАТ-КЛИЕНТ][m] a.txt"
-
-
-async def test_upload_chunks_at_the_moysklad_ten_file_limit():
-    session = FakeSession()
-    repository = MoySkladOrderChatRepository(settings(), session=session)
-
-    await repository.upload_files(
-        UUID("00000000-0000-0000-0000-000000000001"),
-        [MoySkladUpload(filename=f"{index}.txt", content=b"a") for index in range(11)],
-    )
-
-    payloads = [kwargs["json"] for method, _, kwargs in session.calls if method == "POST"]
-    assert [len(payload) for payload in payloads] == [10, 1]
-
-
-async def test_description_files_delete_download_and_webhook_contracts():
-    session = FakeSession()
-    repository = MoySkladOrderChatRepository(settings(), session=session)
-    order_id = UUID("00000000-0000-0000-0000-000000000001")
-    file_id = UUID("00000000-0000-0000-0000-000000000010")
-
-    await repository.update_description(order_id, "chat projection")
-    assert (await repository.list_files(order_id)) == []
-    await repository.delete_file(order_id, file_id)
-    assert await repository.download_file("https://api.moysklad.ru/api/remap/1.2/download/file") == b"downloaded"
-    assert await repository.list_webhooks() == []
-    await repository.create_webhook("https://pixlogistic.com/webhook")
-
-    calls = {(method, url): kwargs for method, url, kwargs in session.calls}
-    order_url = repository.base_url + f"entity/customerorder/{order_id}"
-    assert calls[("PUT", order_url)]["json"] == {"description": "chat projection"}
-    assert ("GET", order_url + "/files") in calls
-    assert ("DELETE", order_url + f"/files/{file_id}") in calls
-    webhook_url = repository.base_url + "entity/webhook"
-    assert calls[("POST", webhook_url)]["json"] == {
-        "url": "https://pixlogistic.com/webhook",
-        "action": "UPDATE",
-        "entityType": "customerorder",
-        "diffType": "FIELDS",
-    }

@@ -26,12 +26,11 @@ must be supplied through the production secret store or ignored server `.env`.
 | `RESET_PASSWORD_TOKEN_SECRET` | Backend | Yes | Yes | Long random string | Password-reset token signing |
 | `CORS_ORIGINS` | Backend | Yes | No | JSON array of origins | Allowed browser origins |
 | `ENABLE_SCHEDULER` | Backend | Yes | No | Boolean | Enables hourly external order-state synchronization |
-| `ENABLE_MOYSKLAD_ORDER_CHAT` | Backend | Yes | No | Boolean, default `false` | Enables order-chat runtime, MinIO, outbox, and webhook processing |
+| `ENABLE_MOYSKLAD_ORDER_CHAT` | Backend | Yes | No | Boolean, default `false` | Enables order-chat API, realtime transport, and MinIO attachment storage |
 | `BITRIX_LINK` | Bitrix | If Bitrix endpoints are enabled | Yes | HTTPS webhook base URL | Authenticated Bitrix REST base |
 | `MOYSKLAD_LOGIN` | MoySklad | Yes for full product behavior | Sensitive | Account login | MoySklad Basic authentication |
 | `MOYSKLAD_PASSWORD` | MoySklad | Yes for full product behavior | Yes | Account password/token | MoySklad Basic authentication |
 | `MOYSKLAD_CHAT_EXTENSION_SECRET` | Order chat | When operator chat is enabled | Yes | Strong random value of at least 32 characters | Shared credential entered on trusted extension workstations; never expose it in URLs or logs |
-| `MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET` | Order chat | When order chat is enabled | Yes | Long random URL-safe value | Authenticates the MoySklad webhook path; never expose it to the browser or logs |
 | `MINIO_ENDPOINT` | Order chat | When order chat is enabled | No | `host:port` without scheme | MinIO S3 API endpoint |
 | `MINIO_ACCESS_KEY` | Order chat | When order chat is enabled | Sensitive | MinIO account name | MinIO API authentication |
 | `MINIO_SECRET_KEY` | Order chat | When order chat is enabled | Yes | Strong random value | MinIO API authentication |
@@ -39,8 +38,6 @@ must be supplied through the production secret store or ignored server `.env`.
 | `MINIO_SECURE` | Order chat | Yes | No | Boolean, default `false` | Uses TLS for backend-to-MinIO requests |
 | `CHAT_ATTACHMENT_MAX_BYTES` | Order chat | Yes | No | Positive integer, default `20971520` | Maximum bytes per attachment (20 MiB) |
 | `CHAT_ATTACHMENT_MAX_COUNT` | Order chat | Yes | No | Positive integer, default `10` | Maximum attachments per site message |
-| `CHAT_OUTBOX_MAX_ATTEMPTS` | Order chat | Yes | No | Positive integer, default `8` | Durable delivery attempts before the visible failed state |
-| `CHAT_OUTBOX_BASE_DELAY_SECONDS` | Order chat | Yes | No | Positive integer, default `5` | Exponential retry base delay |
 | `PRIVOZ_USERNAME` | Privoz | If Privoz/scheduler flows are enabled | Sensitive | Account login | Privoz web login |
 | `PRIVOZ_PASSWORD` | Privoz | If Privoz/scheduler flows are enabled | Yes | Account password | Privoz web login |
 | `MAILERSEND_TOKEN` | Email | Yes for verify/reset flows | Yes | API token | SMTP.BZ authorization header |
@@ -73,7 +70,6 @@ BITRIX_LINK=
 MOYSKLAD_LOGIN=
 MOYSKLAD_PASSWORD=
 MOYSKLAD_CHAT_EXTENSION_SECRET=
-MOYSKLAD_ORDER_CHAT_WEBHOOK_SECRET=
 MINIO_ENDPOINT=
 MINIO_ACCESS_KEY=
 MINIO_SECRET_KEY=
@@ -81,8 +77,6 @@ MINIO_BUCKET=
 MINIO_SECURE=
 CHAT_ATTACHMENT_MAX_BYTES=
 CHAT_ATTACHMENT_MAX_COUNT=
-CHAT_OUTBOX_MAX_ATTEMPTS=
-CHAT_OUTBOX_BASE_DELAY_SECONDS=
 PRIVOZ_USERNAME=
 PRIVOZ_PASSWORD=
 MAILERSEND_TOKEN=
@@ -95,11 +89,11 @@ The GitHub deployment workflow separately consumes repository/action secrets nam
 
 ## Local defaults
 
-`.env.example` contains only local-safe PostgreSQL, Redis, CORS, authentication, and MinIO development defaults. The order-chat feature flag is `false`, its webhook secret is blank, and all external credentials are blank. `APP_ENV=production` rejects the shipped local database and authentication secrets.
+`.env.example` contains only local-safe PostgreSQL, Redis, CORS, authentication, and MinIO development defaults. The order-chat feature flag is `false`, the extension secret is blank, and all external credentials are blank. `APP_ENV=production` rejects the shipped local database and authentication secrets.
 
-The eleven order-chat settings are the feature flag, webhook secret, five MinIO/storage settings, two attachment limits, and two outbox retry settings listed above. Enabling the feature also requires the existing `MOYSKLAD_LOGIN` and correctly spelled `MOYSKLAD_PASSWORD`. `MOYSKLAD_PASWORD` remains a temporary legacy input alias only; never use it in a new environment.
+The nine order-chat settings are the feature flag, extension secret, five MinIO/storage settings, and two attachment limits listed above. Enabling the feature also requires the existing `MOYSKLAD_LOGIN` and correctly spelled `MOYSKLAD_PASSWORD`. `MOYSKLAD_PASWORD` remains a temporary legacy input alias only; never use it in a new environment.
 
 The order-chat production preflight has no notification-provider settings. It
-requires MoySklad, the webhook secret, MinIO, Redis, PostgreSQL, and the normal
+requires MoySklad, the extension secret, MinIO, Redis, PostgreSQL, and the normal
 authentication/browser configuration. Website `ORDER_UPDATED` and
 `ORDER_MESSAGE` notifications use PostgreSQL and Redis.

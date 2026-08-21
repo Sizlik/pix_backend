@@ -1,18 +1,12 @@
-import random
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from hashlib import sha256
-from typing import AsyncIterator
-from uuid import UUID, uuid4
+from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db.models.notifications import Notifications
 from db.models.order_chat import (
-    ChatOutboxEvent,
-    MoySkladOrderFile,
     OrderChatAttachment,
     OrderChatMessage,
     OrderChatState,
@@ -38,14 +32,6 @@ class NewAttachment:
 
 
 @dataclass(frozen=True, slots=True)
-class NewOutboxEvent:
-    event_type: str
-    order_id: UUID
-    dedup_key: str
-    payload: dict
-
-
-@dataclass(frozen=True, slots=True)
 class StoredMessage:
     id: UUID
     order_id: UUID
@@ -58,38 +44,8 @@ class StoredMessage:
     external_key: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class ClaimedOutboxEvent:
-    id: UUID
-    event_type: str
-    order_id: UUID
-    payload: dict
-    attempts: int
-
-
-@dataclass(frozen=True, slots=True)
-class NewMoySkladOrderFile:
-    order_id: UUID
-    moysklad_file_id: UUID
-    filename: str
-    disposition: str
-    message_id: UUID | None = None
-
-
 def object_key(order_id: UUID, message_id: UUID, attachment_id: UUID) -> str:
     return f"orders/{order_id}/messages/{message_id}/attachments/{attachment_id}"
-
-
-def retry_at(
-    now: datetime,
-    *,
-    attempts: int,
-    base_seconds: int,
-    jitter_seconds: float,
-) -> datetime:
-    exponential = base_seconds * (2 ** max(attempts - 1, 0))
-    delay = min(exponential + max(jitter_seconds, 0), 60 * 60)
-    return now + timedelta(seconds=delay)
 
 
 def _stored_message(
@@ -171,7 +127,6 @@ class OrderChatRepository:
         source: str,
         body: str,
         attachments: tuple[NewAttachment, ...] = (),
-        outbox_events: tuple[NewOutboxEvent, ...] = (),
         external_key: str | None = None,
         legacy_message_id: UUID | None = None,
         created_at: datetime | None = None,
@@ -192,7 +147,6 @@ class OrderChatRepository:
                 )
                 if inserted:
                     stored_attachments = await self._insert_attachments(session, message.id, attachments)
-                    await self._insert_outbox_events(session, outbox_events)
                 else:
                     stored_attachments = await self._load_attachments(session, message.id)
                 return _stored_message(message, stored_attachments)
@@ -207,8 +161,6 @@ class OrderChatRepository:
         source: str = "moysklad",
         external_key: str | None = None,
         attachments: tuple[NewAttachment, ...] = (),
-        outbox_events: tuple[NewOutboxEvent, ...] = (),
-        moysklad_files: tuple[NewMoySkladOrderFile, ...] = (),
         created_at: datetime | None = None,
     ) -> StoredMessage:
         async with self._session_factory() as session:
@@ -234,16 +186,9 @@ class OrderChatRepository:
                             object_id=message.id,
                         )
                     )
-                    await self._insert_outbox_events(session, outbox_events)
-                    await self._insert_moysklad_files(session, moysklad_files)
                 else:
                     stored_attachments = await self._load_attachments(session, message.id)
                 return _stored_message(message, stored_attachments)
-
-    async def enqueue_events(self, events: tuple[NewOutboxEvent, ...]) -> None:
-        async with self._session_factory() as session:
-            async with session.begin():
-                await self._insert_outbox_events(session, events)
 
     async def list_messages(
         self,
@@ -361,177 +306,6 @@ class OrderChatRepository:
             attachment, message = row
             return attachment, _stored_message(message, (attachment,))
 
-    async def delivery_state_for(self, message: StoredMessage) -> str:
-        if message.sender_kind == "manager" or message.source == "legacy":
-            return "synced"
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(ChatOutboxEvent.status).where(ChatOutboxEvent.dedup_key == f"sync_order:{message.id}")
-            )
-            status = result.scalar_one_or_none()
-        if status == "completed":
-            return "synced"
-        if status == "dead":
-            return "failed"
-        return "pending"
-
-    async def record_moysklad_files(self, files: tuple[NewMoySkladOrderFile, ...]) -> None:
-        if not files:
-            return
-        async with self._session_factory() as session:
-            async with session.begin():
-                await self._insert_moysklad_files(session, files)
-
-    async def list_moysklad_files(self, order_id: UUID) -> list[MoySkladOrderFile]:
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(MoySkladOrderFile)
-                .where(MoySkladOrderFile.order_id == order_id)
-                .order_by(MoySkladOrderFile.first_seen_at, MoySkladOrderFile.id)
-            )
-            return list(result.scalars())
-
-    async def forget_moysklad_file(self, order_id: UUID, moysklad_file_id: UUID) -> None:
-        async with self._session_factory() as session:
-            async with session.begin():
-                row = await session.execute(
-                    select(MoySkladOrderFile).where(
-                        MoySkladOrderFile.order_id == order_id,
-                        MoySkladOrderFile.moysklad_file_id == moysklad_file_id,
-                    )
-                )
-                model = row.scalar_one_or_none()
-                if model is not None:
-                    await session.delete(model)
-
-    async def list_unmirrored_site_attachments(self, order_id: UUID) -> list[tuple[OrderChatAttachment, StoredMessage]]:
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(OrderChatAttachment, OrderChatMessage)
-                .join(
-                    OrderChatMessage,
-                    OrderChatMessage.id == OrderChatAttachment.message_id,
-                )
-                .where(
-                    OrderChatMessage.order_id == order_id,
-                    OrderChatAttachment.origin == "site",
-                )
-                .order_by(
-                    OrderChatMessage.created_at,
-                    OrderChatAttachment.created_at,
-                    OrderChatAttachment.id,
-                )
-            )
-            return [(attachment, _stored_message(message, (attachment,))) for attachment, message in result.all()]
-
-    @asynccontextmanager
-    async def order_lock(self, order_id: UUID) -> AsyncIterator[bool]:
-        lock_key = int.from_bytes(sha256(order_id.bytes).digest()[:8], "big", signed=True)
-        async with self._session_factory() as session:
-            acquired_result = await session.execute(select(func.pg_try_advisory_lock(lock_key)))
-            acquired = bool(acquired_result.scalar_one())
-            try:
-                yield acquired
-            finally:
-                if acquired:
-                    await session.execute(select(func.pg_advisory_unlock(lock_key)))
-                    await session.commit()
-
-    async def claim_due_event(self) -> ClaimedOutboxEvent | None:
-        now = datetime.now(timezone.utc)
-        async with self._session_factory() as session:
-            async with session.begin():
-                result = await session.execute(
-                    select(ChatOutboxEvent)
-                    .where(
-                        ChatOutboxEvent.status == "pending",
-                        ChatOutboxEvent.available_at <= now,
-                    )
-                    .order_by(
-                        ChatOutboxEvent.available_at,
-                        ChatOutboxEvent.created_at,
-                    )
-                    .with_for_update(skip_locked=True)
-                    .limit(1)
-                )
-                event = result.scalar_one_or_none()
-                if event is None:
-                    return None
-                event.status = "processing"
-                event.locked_at = now
-                event.attempts += 1
-                await session.flush()
-                return ClaimedOutboxEvent(
-                    id=event.id,
-                    event_type=event.event_type,
-                    order_id=event.order_id,
-                    payload=dict(event.payload),
-                    attempts=event.attempts,
-                )
-
-    async def release_claim(self, event_id: UUID, delay_seconds: int) -> None:
-        async with self._session_factory() as session:
-            async with session.begin():
-                result = await session.execute(
-                    select(ChatOutboxEvent).where(ChatOutboxEvent.id == event_id).with_for_update()
-                )
-                event = result.scalar_one_or_none()
-                if event is None:
-                    return
-                event.status = "pending"
-                event.available_at = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
-                event.locked_at = None
-                event.attempts = max(event.attempts - 1, 0)
-
-    async def complete_event(self, event_id: UUID) -> None:
-        async with self._session_factory() as session:
-            async with session.begin():
-                await session.execute(
-                    update(ChatOutboxEvent)
-                    .where(ChatOutboxEvent.id == event_id)
-                    .values(status="completed", locked_at=None, last_error=None)
-                )
-
-    async def retry_event(
-        self,
-        event: ClaimedOutboxEvent,
-        error: Exception | str,
-        max_attempts: int,
-        base_seconds: int,
-    ) -> str:
-        error_text = (str(error) if isinstance(error, str) else f"{type(error).__name__}: {error}")[:1000]
-        status = "dead" if event.attempts >= max_attempts else "pending"
-        values = {
-            "status": status,
-            "locked_at": None,
-            "last_error": error_text,
-        }
-        if status == "pending":
-            values["available_at"] = retry_at(
-                datetime.now(timezone.utc),
-                attempts=event.attempts,
-                base_seconds=base_seconds,
-                jitter_seconds=random.uniform(0, base_seconds),
-            )
-        async with self._session_factory() as session:
-            async with session.begin():
-                await session.execute(update(ChatOutboxEvent).where(ChatOutboxEvent.id == event.id).values(**values))
-        return status
-
-    async def recover_stale_events(self) -> int:
-        stale_before = datetime.now(timezone.utc) - timedelta(minutes=5)
-        async with self._session_factory() as session:
-            async with session.begin():
-                result = await session.execute(
-                    update(ChatOutboxEvent)
-                    .where(
-                        ChatOutboxEvent.status == "processing",
-                        ChatOutboxEvent.locked_at < stale_before,
-                    )
-                    .values(status="pending", locked_at=None)
-                )
-                return result.rowcount or 0
-
     async def _insert_message(
         self,
         session,
@@ -598,47 +372,6 @@ class OrderChatRepository:
         session.add_all(models)
         await session.flush()
         return models
-
-    async def _insert_outbox_events(self, session, events: tuple[NewOutboxEvent, ...]) -> None:
-        if not events:
-            return
-        await session.execute(
-            pg_insert(ChatOutboxEvent)
-            .values(
-                [
-                    {
-                        "id": uuid4(),
-                        "event_type": event.event_type,
-                        "order_id": event.order_id,
-                        "dedup_key": event.dedup_key,
-                        "payload": event.payload,
-                    }
-                    for event in events
-                ]
-            )
-            .on_conflict_do_nothing(index_elements=["dedup_key"])
-        )
-
-    async def _insert_moysklad_files(self, session, files) -> None:
-        if not files:
-            return
-        await session.execute(
-            pg_insert(MoySkladOrderFile)
-            .values(
-                [
-                    {
-                        "id": uuid4(),
-                        "order_id": item.order_id,
-                        "moysklad_file_id": item.moysklad_file_id,
-                        "filename": item.filename,
-                        "disposition": item.disposition,
-                        "message_id": item.message_id,
-                    }
-                    for item in files
-                ]
-            )
-            .on_conflict_do_nothing(index_elements=["order_id", "moysklad_file_id"])
-        )
 
     async def _load_attachments(self, session, message_id: UUID) -> tuple[OrderChatAttachment, ...]:
         result = await session.execute(
