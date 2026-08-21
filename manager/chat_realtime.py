@@ -7,9 +7,12 @@ class LocalChatHub:
     def __init__(self):
         self.connections = defaultdict(set)
 
+    async def register(self, room_id: str, websocket) -> None:
+        self.connections[str(room_id)].add(websocket)
+
     async def connect(self, room_id: str, websocket) -> None:
         await websocket.accept()
-        self.connections[str(room_id)].add(websocket)
+        await self.register(room_id, websocket)
 
     async def disconnect(self, room_id: str, websocket) -> None:
         room = self.connections.get(str(room_id))
@@ -41,6 +44,9 @@ class RedisChatRealtime:
         self._local_hub = local_hub
         self._pubsub = None
         self._listener_task: asyncio.Task | None = None
+
+    async def register(self, room_id: str, websocket) -> None:
+        await self._local_hub.register(str(room_id), websocket)
 
     async def connect(self, room_id: str, websocket) -> None:
         await self._local_hub.connect(str(room_id), websocket)

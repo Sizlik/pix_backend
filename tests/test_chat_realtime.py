@@ -36,6 +36,22 @@ async def test_hub_keeps_multiple_connections_and_removes_only_dead_socket():
     assert second in hub.connections["room"]
 
 
+async def test_register_adds_an_already_accepted_socket_without_accepting_again():
+    hub = LocalChatHub()
+    socket = FakeSocket()
+
+    await hub.register("room", socket)
+
+    assert socket.accepted is False
+    assert socket in hub.connections["room"]
+
+    bridge = RedisChatRealtime(FakeRedis(), hub)
+    second = FakeSocket()
+    await bridge.register("room", second)
+    assert second.accepted is False
+    assert second in hub.connections["room"]
+
+
 class FakeRedis:
     def __init__(self):
         self.published = []

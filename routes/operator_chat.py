@@ -1,3 +1,5 @@
+import asyncio
+from inspect import isawaitable
 from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
@@ -13,10 +15,13 @@ from fastapi import (
     Request,
     Response,
     UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
     status,
 )
 
 from db.schemas.chat import OrderChatMessageResponse, OrderChatPageResponse
+from dependecies.chat import get_chat_realtime
 from dependecies.order_chat import get_operator_chat_authenticator, get_order_chat_service
 from errors import IntegrationNotConfigured, MoySkladOrderLookupUnavailable
 from manager.chat_files import ChatFileRejected
@@ -37,7 +42,6 @@ def require_operator_chat_enabled(request: Request) -> None:
 router = APIRouter(
     prefix="/chat/operator",
     tags=["Operator Order Chat"],
-    dependencies=[Depends(require_operator_chat_enabled)],
 )
 
 
@@ -47,6 +51,12 @@ async def require_operator_chat_secret(
 ) -> None:
     if not authenticator.matches(secret):
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+operator_rest_dependencies = [
+    Depends(require_operator_chat_enabled),
+    Depends(require_operator_chat_secret),
+]
 
 
 def _resource_id(value: str, detail: str) -> UUID:
@@ -63,7 +73,7 @@ def _lookup_unavailable() -> HTTPException:
 @router.get(
     "/orders/{order_id}/messages",
     response_model=OrderChatPageResponse,
-    dependencies=[Depends(require_operator_chat_secret)],
+    dependencies=operator_rest_dependencies,
 )
 async def list_operator_order_messages(
     order_id: str,
@@ -84,7 +94,7 @@ async def list_operator_order_messages(
     "/orders/{order_id}/messages",
     response_model=OrderChatMessageResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_operator_chat_secret)],
+    dependencies=operator_rest_dependencies,
 )
 async def send_operator_order_message(
     order_id: str,
@@ -111,7 +121,7 @@ async def send_operator_order_message(
 
 @router.get(
     "/orders/{order_id}/attachments/{attachment_id}",
-    dependencies=[Depends(require_operator_chat_secret)],
+    dependencies=operator_rest_dependencies,
 )
 async def download_operator_order_attachment(
     order_id: str,
@@ -132,3 +142,80 @@ async def download_operator_order_attachment(
         media_type=download.mime_type,
         headers={"Content-Disposition": disposition},
     )
+
+
+async def receive_operator_authentication(
+    websocket: WebSocket,
+    authenticator: OperatorChatAuthenticator,
+    *,
+    timeout_seconds: float = 5,
+) -> bool:
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            frame = await websocket.receive_json()
+    except (TimeoutError, ValueError, TypeError, WebSocketDisconnect):
+        return False
+    return (
+        isinstance(frame, dict)
+        and set(frame) == {"type", "secret"}
+        and frame.get("type") == "authenticate"
+        and isinstance(frame.get("secret"), str)
+        and authenticator.matches(frame["secret"])
+    )
+
+
+async def _socket_dependency(websocket: WebSocket, provider):
+    dependency = websocket.app.dependency_overrides.get(provider, provider)
+    value = dependency()
+    return await value if isawaitable(value) else value
+
+
+@router.websocket("/ws")
+async def operator_chat_websocket(websocket: WebSocket):
+    room = websocket.query_params.get("room")
+    await websocket.accept()
+    if not websocket.app.state.settings.enable_moysklad_order_chat or not room:
+        await websocket.close(code=4404)
+        return
+    try:
+        order_id = UUID(room)
+    except (TypeError, ValueError):
+        await websocket.close(code=4404)
+        return
+
+    try:
+        authenticator = await _socket_dependency(websocket, get_operator_chat_authenticator)
+    except IntegrationNotConfigured:
+        await websocket.close(code=4404)
+        return
+    if not await receive_operator_authentication(websocket, authenticator, timeout_seconds=5):
+        await websocket.close(code=4401)
+        return
+
+    try:
+        service = await _socket_dependency(websocket, get_order_chat_service)
+        await service.prepare_operator_order(order_id)
+    except (OrderChatNotFound, IntegrationNotConfigured, MoySkladOrderLookupUnavailable):
+        await websocket.close(code=4404)
+        return
+
+    registered = False
+    realtime = None
+    try:
+        await websocket.send_json({"type": "authenticated"})
+        realtime = await _socket_dependency(websocket, get_chat_realtime)
+        await realtime.register(str(order_id), websocket)
+        registered = True
+        while True:
+            await websocket.receive_json()
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "code": "order_chat_http_required",
+                }
+            )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if registered:
+            await realtime.disconnect(str(order_id), websocket)
