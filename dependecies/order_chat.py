@@ -11,7 +11,11 @@ from dependecies.notifications import build_notification_manager
 from manager.chat_outbox import OrderChatOutboxWorker
 from manager.chat_storage import MinioObjectStorage
 from manager.moysklad_order_chat import MoySkladOrderChatSynchronizer
-from manager.order_chat import OrderChatAccessPolicy, OrderChatService
+from manager.order_chat import (
+    OperatorOrderChatAccessPolicy,
+    OrderChatAccessPolicy,
+    OrderChatService,
+)
 from manager.order_chat_auth import OperatorChatAuthenticator
 
 
@@ -31,10 +35,13 @@ def get_order_chat_service() -> OrderChatService:
     settings = get_settings()
     chat_settings = settings.require_order_chat()
     moysklad = MoySkladOrderChatRepository(settings)
+    repository = OrderChatRepository()
     return OrderChatService(
-        repository=OrderChatRepository(),
+        repository=repository,
         storage=get_order_chat_storage(),
         access_policy=OrderChatAccessPolicy(moysklad),
+        operator_access_policy=OperatorOrderChatAccessPolicy(moysklad, repository),
+        notification_manager=build_notification_manager(),
         attachment_max_count=chat_settings.attachment_max_count,
         attachment_max_bytes=chat_settings.attachment_max_bytes,
         realtime=get_chat_realtime(),

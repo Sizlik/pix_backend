@@ -22,6 +22,7 @@ from routes.bitrix import router as router_bitrix
 from routes.chat import router as router_chat
 from routes.link_preview import router as router_link_preview
 from routes.notifications import router as router_notifications
+from routes.operator_chat import router as router_operator_chat
 from routes.orders import router as router_orders
 from routes.organizations import router as router_organizations
 from routes.payments import router as router_payment
@@ -66,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 scheduler.shutdown(wait=False)
 
     application = FastAPI(title="Pix Logistic API", lifespan=lifespan)
+    application.state.settings = settings
     api_router = APIRouter(prefix="/api_v1")
 
     api_router.include_router(router_users)
@@ -74,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_router.include_router(router_bitrix)
     api_router.include_router(router_orders)
     api_router.include_router(router_chat)
+    api_router.include_router(router_operator_chat)
     api_router.include_router(router_link_preview)
     api_router.include_router(router_notifications)
     api_router.include_router(router_organizations)
@@ -81,6 +84,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @api_router.get("/health", tags=["health"])
     async def health():
         return {"status": "ok"}
+
+    @api_router.get("/capabilities")
+    async def capabilities():
+        return {"moysklad_order_chat": settings.enable_moysklad_order_chat}
 
     @api_router.get("/")
     async def root():

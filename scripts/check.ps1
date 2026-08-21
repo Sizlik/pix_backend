@@ -60,6 +60,7 @@ $ruffTargets = @(
     "routes/integration/order_chat_webhook.py",
     "routes/link_preview.py",
     "routes/notifications.py",
+    "routes/operator_chat.py",
     "routes/orders.py",
     "utils/celery_worker.py",
     "scripts/check_production_config.py",
