@@ -69,9 +69,14 @@ class OperatorOrderChatAccessPolicy:
             counterparty_id = UUID(href.rstrip("/").rsplit("/", 1)[-1])
         except (AttributeError, KeyError, TypeError, ValueError):
             raise OrderChatNotFound() from None
-        client = await self._repository.get_user_by_moysklad_counterparty(counterparty_id)
-        if client is None:
-            raise OrderChatNotFound()
+        client = await self._repository.get_state_client(order_id)
+        if client is not None:
+            if client.moysklad_counterparty_id != counterparty_id:
+                raise OrderChatNotFound()
+        else:
+            client = await self._repository.get_user_by_moysklad_counterparty(counterparty_id)
+            if client is None:
+                raise OrderChatNotFound()
         try:
             await self._repository.ensure_state(order_id, client.id)
         except LookupError:

@@ -21,12 +21,14 @@ OTHER_ORDER_ID = UUID("00000000-0000-0000-0000-000000000002")
 CLIENT_ID = UUID("00000000-0000-0000-0000-000000000003")
 COUNTERPARTY_ID = UUID("00000000-0000-0000-0000-000000000004")
 ATTACHMENT_ID = UUID("00000000-0000-0000-0000-000000000005")
+OTHER_COUNTERPARTY_ID = UUID("00000000-0000-0000-0000-000000000006")
 DEFAULT_ORDER = object()
 
 
 @dataclass
 class ClientStub:
     id: UUID = CLIENT_ID
+    moysklad_counterparty_id: UUID = COUNTERPARTY_ID
 
 
 class FakeMoySklad:
@@ -59,6 +61,7 @@ class FakeStorage:
 class FakeRepository:
     def __init__(self):
         self.user = ClientStub()
+        self.state_client = None
         self.ensured = []
         self.ensure_failure = None
         self.created = None
@@ -71,6 +74,10 @@ class FakeRepository:
     async def get_user_by_moysklad_counterparty(self, counterparty_id):
         assert counterparty_id == COUNTERPARTY_ID
         return self.user
+
+    async def get_state_client(self, order_id):
+        assert order_id == ORDER_ID
+        return self.state_client
 
     async def ensure_state(self, order_id, client_id):
         if self.ensure_failure is not None:
@@ -199,6 +206,17 @@ async def test_operator_policy_resolves_linked_counterparty_and_pins_state():
     assert repository.ensured == [(ORDER_ID, CLIENT_ID)]
 
 
+async def test_operator_policy_uses_matching_state_client_when_reverse_link_is_ambiguous():
+    policy, repository = make_policy()
+    repository.user = None
+    repository.state_client = ClientStub()
+
+    client = await policy.resolve_client(ORDER_ID)
+
+    assert client.id == CLIENT_ID
+    assert repository.ensured == [(ORDER_ID, CLIENT_ID)]
+
+
 @pytest.mark.parametrize(
     "order",
     [
@@ -226,7 +244,7 @@ async def test_operator_policy_hides_unlinked_order():
 
 async def test_operator_policy_hides_order_state_conflict():
     policy, repository = make_policy()
-    repository.ensure_failure = LookupError("different client")
+    repository.state_client = ClientStub(moysklad_counterparty_id=OTHER_COUNTERPARTY_ID)
 
     with pytest.raises(OrderChatNotFound):
         await policy.resolve_client(ORDER_ID)
