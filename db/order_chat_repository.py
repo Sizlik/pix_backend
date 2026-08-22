@@ -52,6 +52,15 @@ class StoredMessage:
     external_key: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class StoredConversation:
+    order_id: UUID
+    order_name: str | None
+    last_message: StoredMessage
+    attachment_count: int
+    unread_count: int
+
+
 def object_key(order_id: UUID, message_id: UUID, attachment_id: UUID) -> str:
     return f"orders/{order_id}/messages/{message_id}/attachments/{attachment_id}"
 
@@ -70,6 +79,20 @@ def _stored_message(
         created_at=message.created_at,
         attachments=attachments,
         external_key=message.external_key,
+    )
+
+
+def _stored_conversation(
+    state: OrderChatState,
+    message: OrderChatMessage,
+    attachment_count: int,
+) -> StoredConversation:
+    return StoredConversation(
+        order_id=state.order_id,
+        order_name=state.order_name,
+        last_message=_stored_message(message),
+        attachment_count=int(attachment_count),
+        unread_count=state.operator_unread_count,
     )
 
 
@@ -124,6 +147,141 @@ class OrderChatRepository:
             )
             users = list(result.scalars())
             return users[0] if len(users) == 1 else None
+
+    @staticmethod
+    def _conversation_statement():
+        attachment_counts = (
+            select(
+                OrderChatAttachment.message_id.label("message_id"),
+                func.count(OrderChatAttachment.id).label("attachment_count"),
+            )
+            .group_by(OrderChatAttachment.message_id)
+            .subquery()
+        )
+        return (
+            select(
+                OrderChatState,
+                OrderChatMessage,
+                func.coalesce(attachment_counts.c.attachment_count, 0),
+            )
+            .join(
+                OrderChatMessage,
+                OrderChatState.latest_message_id == OrderChatMessage.id,
+            )
+            .outerjoin(
+                attachment_counts,
+                attachment_counts.c.message_id == OrderChatMessage.id,
+            )
+        )
+
+    async def list_conversations(
+        self,
+        before: UUID | None,
+        limit: int,
+    ) -> tuple[list[StoredConversation], UUID | None]:
+        async with self._session_factory() as session:
+            cursor = None
+            if before is not None:
+                result = await session.execute(
+                    select(OrderChatMessage)
+                    .join(
+                        OrderChatState,
+                        OrderChatState.latest_message_id == OrderChatMessage.id,
+                    )
+                    .where(OrderChatMessage.id == before)
+                )
+                cursor = result.scalar_one_or_none()
+                if cursor is None:
+                    raise OrderChatNotFound()
+
+            statement = self._conversation_statement()
+            if cursor is not None:
+                statement = statement.where(
+                    or_(
+                        OrderChatMessage.created_at < cursor.created_at,
+                        and_(
+                            OrderChatMessage.created_at == cursor.created_at,
+                            OrderChatMessage.id < cursor.id,
+                        ),
+                    )
+                )
+            result = await session.execute(
+                statement.order_by(
+                    OrderChatMessage.created_at.desc(),
+                    OrderChatMessage.id.desc(),
+                ).limit(limit + 1)
+            )
+            rows = list(result.all())
+            has_more = len(rows) > limit
+            selected = rows[:limit]
+            conversations = [
+                _stored_conversation(state, message, attachment_count)
+                for state, message, attachment_count in selected
+            ]
+            next_before = (
+                conversations[-1].last_message.id
+                if has_more and conversations
+                else None
+            )
+            return conversations, next_before
+
+    async def conversation(self, order_id: UUID) -> StoredConversation | None:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                self._conversation_statement()
+                .where(OrderChatState.order_id == order_id)
+                .limit(1)
+            )
+            row = next(iter(result.all()), None)
+            if row is None:
+                return None
+            state, message, attachment_count = row
+            return _stored_conversation(state, message, attachment_count)
+
+    async def total_operator_unread(self) -> int:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(
+                    func.coalesce(func.sum(OrderChatState.operator_unread_count), 0)
+                )
+            )
+            return int(result.scalar_one())
+
+    async def clear_operator_unread(self, order_id: UUID) -> int:
+        async with self._session_factory() as session:
+            async with session.begin():
+                result = await session.execute(
+                    select(OrderChatState)
+                    .where(
+                        OrderChatState.order_id == order_id,
+                        OrderChatState.latest_message_id.is_not(None),
+                    )
+                    .with_for_update()
+                )
+                state = result.scalar_one_or_none()
+                if state is None:
+                    raise OrderChatNotFound()
+                state.operator_unread_count = 0
+                state.updated_at = func.now()
+                total = await session.execute(
+                    select(
+                        func.coalesce(
+                            func.sum(OrderChatState.operator_unread_count),
+                            0,
+                        )
+                    )
+                )
+                return int(total.scalar_one())
+
+    async def cache_order_name(self, order_id: UUID, order_name: str) -> None:
+        normalized_name = order_name.strip()
+        async with self._session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    update(OrderChatState)
+                    .where(OrderChatState.order_id == order_id)
+                    .values(order_name=normalized_name, updated_at=func.now())
+                )
 
     async def create_message(
         self,
