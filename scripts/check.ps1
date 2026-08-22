@@ -11,6 +11,7 @@ $ruffTargets = @(
     "alembic/versions/b7e1d3a9f4c2_add_user_addresses.py",
     "alembic/versions/d4e5f6a7b8c9_remove_telegram.py",
     "alembic/versions/e3b7c9d1a204_allow_extension_chat_source.py",
+    "alembic/versions/f4c8a2d6b901_order_chat_inbox_email.py",
     "db/postgres.py",
     "db/redis.py",
     "db/address_repository.py",
@@ -70,8 +71,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $alembicHeads = @(& ".\.venv\Scripts\python.exe" -m alembic heads)
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $headLines = @($alembicHeads | Where-Object { $_ -match "\(head\)" })
-if ($headLines.Count -ne 1 -or $headLines[0] -notmatch "^e3b7c9d1a204\s") {
-    Write-Error "Expected one Alembic head at e3b7c9d1a204."
+if ($headLines.Count -ne 1 -or $headLines[0] -notmatch "^f4c8a2d6b901\s") {
+    Write-Error "Expected one Alembic head at f4c8a2d6b901."
     exit 1
 }
 
