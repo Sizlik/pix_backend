@@ -1,8 +1,9 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SenderKind(StrEnum):
@@ -45,3 +46,37 @@ class OrderChatMessageResponse(BaseModel):
 class OrderChatPageResponse(BaseModel):
     items: list[OrderChatMessageResponse]
     next_before: UUID | None
+
+
+class ConversationLastMessage(BaseModel):
+    id: UUID
+    sender_kind: SenderKind
+    sender_label: str
+    message: str
+    created_at: datetime
+    attachment_count: int = Field(ge=0)
+
+
+class ConversationSummary(BaseModel):
+    order_id: UUID
+    order_name: str
+    last_message: ConversationLastMessage
+    unread_count: int = Field(ge=0)
+
+
+class ConversationPage(BaseModel):
+    items: list[ConversationSummary]
+    next_before: UUID | None
+    total_unread: int = Field(ge=0)
+
+
+class OperatorReadResponse(BaseModel):
+    order_id: UUID
+    unread_count: Literal[0] = 0
+    total_unread: int = Field(ge=0)
+
+
+class ConversationUpdatedEvent(BaseModel):
+    type: Literal["conversation_updated"] = "conversation_updated"
+    item: ConversationSummary
+    total_unread: int = Field(ge=0)

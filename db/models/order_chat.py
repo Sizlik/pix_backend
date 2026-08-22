@@ -79,6 +79,17 @@ class OrderChatState(Base):
 
     order_id = Column(UUID, primary_key=True)
     client_id = Column(ForeignKey("user.id"), nullable=False, index=True)
+    order_name = Column(String(255), nullable=True)
+    latest_message_id = Column(
+        ForeignKey("order_chat_message.id"),
+        nullable=True,
+    )
+    operator_unread_count = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     initialized = Column(Boolean, nullable=False, default=False, server_default="false")
     rendered_description_hash = Column(String(64), nullable=True)
     prior_comment_file_id = Column(UUID, nullable=True)
@@ -89,6 +100,66 @@ class OrderChatState(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "operator_unread_count >= 0",
+            name="ck_order_chat_operator_unread_nonnegative",
+        ),
+    )
+
+
+class OrderChatEmailOutbox(Base):
+    __tablename__ = "order_chat_email_outbox"
+
+    id = Column(UUID, primary_key=True, default=uuid.uuid4)
+    message_id = Column(
+        ForeignKey("order_chat_message.id"),
+        nullable=False,
+        unique=True,
+    )
+    recipient_email = Column(String(320), nullable=False)
+    recipient_kind = Column(String(16), nullable=False)
+    status = Column(
+        String(16),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    available_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(String(255), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "recipient_kind IN ('client', 'manager')",
+            name="ck_order_chat_email_recipient_kind",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'sent', 'dead')",
+            name="ck_order_chat_email_status",
+        ),
+        CheckConstraint(
+            "attempts >= 0",
+            name="ck_order_chat_email_attempts_nonnegative",
+        ),
+        Index(
+            "ix_order_chat_email_outbox_due",
+            "status",
+            "available_at",
+        ),
     )
 
 

@@ -24,6 +24,13 @@ class OrderChatSettings:
     attachment_max_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class OrderChatEmailSettings:
+    manager_email: str
+    public_site_url: str
+    smtp_bz_token: str
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -46,6 +53,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     enable_scheduler: bool = False
     enable_moysklad_order_chat: bool = False
+    enable_order_chat_email_notifications: bool = False
 
     bitrix_link: SecretStr | None = None
     moysklad_login: str | None = None
@@ -60,6 +68,8 @@ class Settings(BaseSettings):
     privoz_password: SecretStr | None = None
     mailersend_token: SecretStr | None = None
     next_public_backend_url: str | None = None
+    order_chat_manager_email: str | None = None
+    pix_public_site_url: str | None = None
     pgadmin_default_email: str | None = None
     pgadmin_default_password: SecretStr | None = None
     moysklad_chat_extension_secret: SecretStr | None = None
@@ -99,6 +109,27 @@ class Settings(BaseSettings):
         return require_secret(
             self.moysklad_chat_extension_secret,
             "moysklad chat extension",
+        )
+
+    def require_order_chat_email(self) -> OrderChatEmailSettings:
+        if not self.enable_order_chat_email_notifications:
+            raise IntegrationNotConfigured("order chat email notifications")
+        manager_email = require_value(
+            self.order_chat_manager_email,
+            "order chat email notifications",
+        ).strip()
+        public_site_url = require_value(
+            self.pix_public_site_url,
+            "order chat email notifications",
+        ).strip().rstrip("/")
+        smtp_bz_token = require_secret(
+            self.mailersend_token,
+            "order chat email notifications",
+        )
+        return OrderChatEmailSettings(
+            manager_email=manager_email,
+            public_site_url=public_site_url,
+            smtp_bz_token=smtp_bz_token,
         )
 
     @model_validator(mode="after")
