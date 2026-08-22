@@ -401,9 +401,10 @@ class OrderChatRepository:
                         order_id,
                         client_id,
                     )
-                    self._apply_message_to_state(
+                    await self._apply_message_to_state(
+                        session,
                         state,
-                        message.id,
+                        message,
                         order_name,
                         increment_operator_unread=True,
                     )
@@ -454,9 +455,10 @@ class OrderChatRepository:
                         order_id,
                         client_id,
                     )
-                    self._apply_message_to_state(
+                    await self._apply_message_to_state(
+                        session,
                         state,
-                        message.id,
+                        message,
                         order_name,
                         increment_operator_unread=False,
                     )
@@ -493,14 +495,32 @@ class OrderChatRepository:
         return state
 
     @staticmethod
-    def _apply_message_to_state(
+    async def _apply_message_to_state(
+        session,
         state: OrderChatState,
-        message_id: UUID,
+        message: OrderChatMessage,
         order_name: str | None,
         *,
         increment_operator_unread: bool,
     ) -> None:
-        state.latest_message_id = message_id
+        should_advance = state.latest_message_id is None
+        if not should_advance and state.latest_message_id != message.id:
+            result = await session.execute(
+                select(OrderChatMessage.created_at, OrderChatMessage.id).where(
+                    OrderChatMessage.id == state.latest_message_id
+                )
+            )
+            latest_key = result.one_or_none()
+            if latest_key is None:
+                should_advance = True
+            else:
+                latest_created_at, latest_id = latest_key
+                should_advance = (message.created_at, message.id) > (
+                    latest_created_at,
+                    latest_id,
+                )
+        if should_advance:
+            state.latest_message_id = message.id
         if order_name is not None and order_name.strip():
             state.order_name = order_name.strip()
         if increment_operator_unread:

@@ -17,14 +17,17 @@ from db.order_chat_repository import (
 ORDER_ID = UUID("00000000-0000-0000-0000-000000000001")
 MESSAGE_ID = UUID("00000000-0000-0000-0000-000000000002")
 CLIENT_ID = UUID("00000000-0000-0000-0000-000000000003")
+NEWER_MESSAGE_ID = UUID("00000000-0000-0000-0000-000000000099")
 
 
 class DeliverySession:
-    def __init__(self, state):
+    def __init__(self, state, *, latest_created_at=None):
         self.state = state
+        self.latest_created_at = latest_created_at
         self.added = []
         self.begin_count = 0
         self.in_transaction = False
+        self.execute_count = 0
 
     async def __aenter__(self):
         return self
@@ -43,6 +46,14 @@ class DeliverySession:
 
     async def execute(self, statement):
         assert self.in_transaction
+        self.execute_count += 1
+        if self.execute_count > 1:
+            row = (
+                (self.latest_created_at, self.state.latest_message_id)
+                if self.latest_created_at is not None
+                else None
+            )
+            return SimpleNamespace(one_or_none=lambda: row)
         return SimpleNamespace(scalar_one_or_none=lambda: self.state)
 
     def add(self, model):
@@ -91,12 +102,12 @@ class DeliveryRepository(OrderChatRepository):
         return ()
 
 
-def chat_state(*, client_id=CLIENT_ID, unread=0):
+def chat_state(*, client_id=CLIENT_ID, unread=0, latest_message_id=None):
     return SimpleNamespace(
         order_id=ORDER_ID,
         client_id=client_id,
         order_name=None,
-        latest_message_id=None,
+        latest_message_id=latest_message_id,
         operator_unread_count=unread,
         updated_at=None,
     )
@@ -244,3 +255,26 @@ async def test_disabled_email_still_commits_manager_notification_and_projection(
 
     assert state.latest_message_id == MESSAGE_ID
     assert [type(item) for item in session.added] == [Notifications]
+
+
+async def test_late_older_message_cannot_move_latest_projection_backwards():
+    state = chat_state(
+        unread=2,
+        latest_message_id=NEWER_MESSAGE_ID,
+    )
+    session = DeliverySession(
+        state,
+        latest_created_at=datetime(2026, 8, 22, 13, tzinfo=UTC),
+    )
+    repository = DeliveryRepository(session)
+
+    await repository.create_client_message_with_delivery(
+        message_id=MESSAGE_ID,
+        order_id=ORDER_ID,
+        client_id=CLIENT_ID,
+        body="Запоздавшее сообщение",
+        source="site",
+    )
+
+    assert state.latest_message_id == NEWER_MESSAGE_ID
+    assert state.operator_unread_count == 3

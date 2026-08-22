@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -16,6 +17,7 @@ RETRY_DELAYS_SECONDS = (60, 300, 900, 3600, 21600)
 MAX_ATTEMPTS = 10
 CLAIM_LIMIT = 20
 LEASE_DURATION = timedelta(minutes=5)
+logger = logging.getLogger(__name__)
 
 
 def retry_delay_seconds(attempt: int) -> int:
@@ -74,7 +76,14 @@ class OrderChatEmailDispatcher:
             lease_before=now - LEASE_DURATION,
         )
         for job in jobs:
-            await self._deliver(job, now)
+            try:
+                await self._deliver(job, now)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Order-chat email job persistence failed; lease recovery will retry it"
+                )
         return len(jobs)
 
     async def _deliver(
@@ -116,7 +125,15 @@ class OrderChatEmailDispatcher:
 
     async def _run(self) -> None:
         while not self._stopping:
-            processed = await self.process_once()
+            try:
+                processed = await self.process_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Order-chat email polling failed; dispatcher will retry"
+                )
+                processed = 0
             if self._stopping or processed:
                 continue
             try:

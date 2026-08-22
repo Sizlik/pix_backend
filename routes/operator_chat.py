@@ -212,6 +212,15 @@ async def _socket_dependency(websocket: WebSocket, provider):
     return await value if isawaitable(value) else value
 
 
+async def register_authenticated_socket(websocket, realtime, room_id: str) -> None:
+    await realtime.register(room_id, websocket)
+    try:
+        await websocket.send_json({"type": "authenticated"})
+    except BaseException:
+        await realtime.disconnect(room_id, websocket)
+        raise
+
+
 @router.websocket("/ws")
 async def operator_chat_websocket(websocket: WebSocket):
     room = websocket.query_params.get("room")
@@ -244,9 +253,8 @@ async def operator_chat_websocket(websocket: WebSocket):
     registered = False
     realtime = None
     try:
-        await websocket.send_json({"type": "authenticated"})
         realtime = await _socket_dependency(websocket, get_chat_realtime)
-        await realtime.register(str(order_id), websocket)
+        await register_authenticated_socket(websocket, realtime, str(order_id))
         registered = True
         while True:
             await websocket.receive_json()
@@ -288,12 +296,11 @@ async def operator_inbox_websocket(websocket: WebSocket):
     registered = False
     realtime = None
     try:
-        await websocket.send_json({"type": "authenticated"})
         realtime = await _socket_dependency(
             websocket,
             get_operator_inbox_realtime,
         )
-        await realtime.register("global", websocket)
+        await register_authenticated_socket(websocket, realtime, "global")
         registered = True
         while True:
             await websocket.receive_json()

@@ -78,6 +78,32 @@ class RecordingSender:
             raise self.error
 
 
+class RecoveringRepository(FakeRepository):
+    def __init__(self, *, fail_claim_once=False, fail_mark_sent_once=False):
+        super().__init__([])
+        self.fail_claim_once = fail_claim_once
+        self.fail_mark_sent_once = fail_mark_sent_once
+        self.delivered = asyncio.Event()
+        self._batches = [[claimed_job()]]
+        if fail_mark_sent_once:
+            self._batches.append([claimed_job()])
+
+    async def claim_due(self, **values):
+        self.claims.append(values)
+        self.claimed_event.set()
+        if self.fail_claim_once:
+            self.fail_claim_once = False
+            raise RuntimeError("temporary database failure")
+        return self._batches.pop(0) if self._batches else []
+
+    async def mark_sent(self, *args, **kwargs):
+        if self.fail_mark_sent_once:
+            self.fail_mark_sent_once = False
+            raise RuntimeError("temporary commit failure")
+        await super().mark_sent(*args, **kwargs)
+        self.delivered.set()
+
+
 @pytest.mark.parametrize(
     ("attempt", "seconds"),
     [(1, 60), (2, 300), (3, 900), (4, 3600), (5, 21600), (9, 21600)],
@@ -164,6 +190,34 @@ async def test_start_and_stop_wake_the_poll_loop_without_claiming_after_stop():
     await asyncio.sleep(0)
 
     assert len(repository.claims) == calls_after_stop
+
+
+@pytest.mark.parametrize(
+    ("fail_claim_once", "fail_mark_sent_once"),
+    [(True, False), (False, True)],
+)
+async def test_poll_loop_recovers_after_transient_repository_failure(
+    fail_claim_once,
+    fail_mark_sent_once,
+):
+    repository = RecoveringRepository(
+        fail_claim_once=fail_claim_once,
+        fail_mark_sent_once=fail_mark_sent_once,
+    )
+    dispatcher = dispatcher_module.OrderChatEmailDispatcher(
+        repository=repository,
+        sender=RecordingSender(),
+        public_site_url="https://pixlogistic.com",
+        clock=lambda: NOW,
+        poll_interval_seconds=0.001,
+    )
+
+    await dispatcher.start()
+    await asyncio.wait_for(repository.delivered.wait(), timeout=1)
+    await dispatcher.stop()
+
+    assert repository.sent == [((OUTBOX_ID,), {"sent_at": NOW})]
+    assert len(repository.claims) >= 2
 
 
 def test_dependency_builder_constructs_dispatcher_without_network_access():

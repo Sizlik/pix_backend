@@ -14,7 +14,10 @@ from errors import MoySkladOrderLookupUnavailable
 from main import create_app
 from manager.order_chat import OrderChatNotFound
 from manager.order_chat_auth import OperatorChatAuthenticator
-from routes.operator_chat import receive_operator_authentication
+from routes.operator_chat import (
+    receive_operator_authentication,
+    register_authenticated_socket,
+)
 
 ORDER_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -88,6 +91,26 @@ class RecordingRealtime:
 
     async def disconnect(self, room_id, websocket):
         self.disconnected.append((room_id, websocket))
+
+
+async def test_room_registration_precedes_authenticated_acknowledgement():
+    sequence = []
+    realtime = RecordingRealtime(sequence)
+
+    class RecordingSocket:
+        async def send_json(self, value):
+            sequence.append(("send", value))
+
+    await register_authenticated_socket(
+        RecordingSocket(),
+        realtime,
+        ORDER_ID,
+    )
+
+    assert sequence == [
+        "register",
+        ("send", {"type": "authenticated"}),
+    ]
 
 
 def storage_stub():

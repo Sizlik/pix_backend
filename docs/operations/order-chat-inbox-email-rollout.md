@@ -53,9 +53,12 @@ their existing environment boundary. A representative custom-format backup is:
 
 ```powershell
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$null = New-Item -ItemType Directory -Force -Path "backups"
 $backup = "backups/pix-before-order-chat-inbox-$stamp.dump"
-docker compose exec -T postgres sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > $backup
-pg_restore --list $backup > "$backup.list"
+$containerBackup = "/tmp/pix-before-order-chat-inbox-$stamp.dump"
+docker compose exec -T postgres sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --file="$1"' sh $containerBackup
+docker compose cp "postgres:$containerBackup" $backup
+pg_restore --list $backup | Set-Content -Encoding utf8 "$backup.list"
 Get-Item $backup, "$backup.list" | Select-Object FullName, Length
 Get-FileHash -Algorithm SHA256 $backup
 ```
@@ -63,7 +66,10 @@ Get-FileHash -Algorithm SHA256 $backup
 Adapt service names only after inspecting the active Compose project. A zero
 exit code alone is insufficient: the dump must be non-empty and
 `pg_restore --list` must contain the expected schemas/tables. Store it outside
-volumes that a deployment or cleanup can replace.
+volumes that a deployment or cleanup can replace. The binary custom-format
+dump is written with `pg_dump --file` and copied byte-for-byte; do not send it
+through PowerShell's `>` redirection. Remove the explicit temporary container
+path only after the host copy and listing have both been verified.
 
 ## Post-deploy checks
 
