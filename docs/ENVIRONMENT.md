@@ -27,6 +27,9 @@ must be supplied through the production secret store or ignored server `.env`.
 | `CORS_ORIGINS` | Backend | Yes | No | JSON array of origins | Allowed browser origins |
 | `ENABLE_SCHEDULER` | Backend | Yes | No | Boolean | Enables hourly external order-state synchronization |
 | `ENABLE_MOYSKLAD_ORDER_CHAT` | Backend | Yes | No | Boolean, default `false` | Enables order-chat API, realtime transport, and MinIO attachment storage |
+| `ENABLE_ORDER_CHAT_EMAIL_NOTIFICATIONS` | Backend | Yes | No | Boolean, default `false` | Independently enables durable order-chat email outbox delivery |
+| `ORDER_CHAT_MANAGER_EMAIL` | Order-chat email | When order-chat email is enabled | Sensitive | Valid recipient email address | Receives email for new client messages |
+| `PIX_PUBLIC_SITE_URL` | Order-chat email | When order-chat email is enabled | No | Exact public HTTPS origin | Base for order deep links in email |
 | `BITRIX_LINK` | Bitrix | If Bitrix endpoints are enabled | Yes | HTTPS webhook base URL | Authenticated Bitrix REST base |
 | `MOYSKLAD_LOGIN` | MoySklad | Yes for full product behavior | Sensitive | Account login | MoySklad Basic authentication |
 | `MOYSKLAD_PASSWORD` | MoySklad | Yes for full product behavior | Yes | Account password/token | MoySklad Basic authentication |
@@ -67,6 +70,9 @@ RESET_PASSWORD_TOKEN_SECRET=
 CORS_ORIGINS=
 ENABLE_SCHEDULER=
 ENABLE_MOYSKLAD_ORDER_CHAT=
+ENABLE_ORDER_CHAT_EMAIL_NOTIFICATIONS=
+ORDER_CHAT_MANAGER_EMAIL=
+PIX_PUBLIC_SITE_URL=
 BITRIX_LINK=
 MOYSKLAD_LOGIN=
 MOYSKLAD_PASSWORD=
@@ -101,10 +107,20 @@ The GitHub deployment workflow separately consumes repository/action secrets nam
 
 The nine order-chat settings are the feature flag, extension secret, five MinIO/storage settings, and two attachment limits listed above. Enabling the feature also requires the existing `MOYSKLAD_LOGIN` and correctly spelled `MOYSKLAD_PASSWORD`. `MOYSKLAD_PASWORD` remains a temporary legacy input alias only; never use it in a new environment.
 
-The order-chat production preflight has no notification-provider settings. It
-requires MoySklad, the extension secret, MinIO, Redis, PostgreSQL, and the normal
-authentication/browser configuration. Website `ORDER_UPDATED` and
-`ORDER_MESSAGE` notifications use PostgreSQL and Redis.
+The order-chat production preflight requires MoySklad, the extension secret,
+MinIO, Redis, PostgreSQL, and the normal authentication/browser configuration.
+When durable email delivery is enabled, it additionally requires a valid
+manager recipient, the existing SMTP.BZ token in `MAILERSEND_TOKEN`, and an
+exact public HTTPS site origin. Keep the email flag off through migration and
+the first backend smoke. Website `ORDER_UPDATED` and `ORDER_MESSAGE`
+notifications continue to use PostgreSQL and Redis independently of the email
+flag.
+
+Order-chat email jobs are durable. Operational states are `pending`,
+`processing`, `sent`, and `dead`; an abandoned processing lease is recoverable
+after five minutes. Retry delays are 1 minute, 5 minutes, 15 minutes, 1 hour,
+then 6 hours, with at most 10 attempts. Error storage contains only safe
+categories, not SMTP response bodies or credentials.
 
 `PIX_EXTENSION_BACKEND_URL` is consumed by the adjacent
 `pix_frontend_v2/moysklad-chat-extension` Vite build, not by `config.Settings`.

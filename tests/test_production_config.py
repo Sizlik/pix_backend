@@ -288,6 +288,9 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "CORS_ORIGINS",
         "ENABLE_SCHEDULER",
         "ENABLE_MOYSKLAD_ORDER_CHAT",
+        "ENABLE_ORDER_CHAT_EMAIL_NOTIFICATIONS",
+        "ORDER_CHAT_MANAGER_EMAIL",
+        "PIX_PUBLIC_SITE_URL",
         "BITRIX_LINK",
         "MOYSKLAD_LOGIN",
         "MOYSKLAD_PASSWORD",
@@ -320,6 +323,7 @@ def test_production_environment_template_is_complete_and_copy_safe():
         "PRIVOZ_USERNAME",
         "PRIVOZ_PASSWORD",
         "MAILERSEND_TOKEN",
+        "ORDER_CHAT_MANAGER_EMAIL",
         "PGADMIN_DEFAULT_EMAIL",
         "PGADMIN_DEFAULT_PASSWORD",
     }
@@ -327,6 +331,8 @@ def test_production_environment_template_is_complete_and_copy_safe():
     assert set(values) == expected_keys
     assert values["APP_ENV"] == "production"
     assert values["ENABLE_MOYSKLAD_ORDER_CHAT"] == "false"
+    assert values["ENABLE_ORDER_CHAT_EMAIL_NOTIFICATIONS"] == "false"
+    assert values["PIX_PUBLIC_SITE_URL"] == "https://pixlogistic.com"
     assert values["MINIO_ENDPOINT"] == "localhost:9000"
     assert values["MINIO_BUCKET"] == "pix-order-chat"
     assert values["NEXT_PUBLIC_BACKEND_URL"] == (

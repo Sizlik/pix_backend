@@ -30,9 +30,17 @@ and unpacked-Chromium smoke coverage.
 - [Environment variables](docs/ENVIRONMENT.md)
 - [Security notes](docs/SECURITY_NOTES.md)
 - [MoySklad extension cutover](docs/operations/moysklad-chat-extension-cutover.md)
+- [Order-chat inbox and email rollout](docs/operations/order-chat-inbox-email-rollout.md)
 - [Agent guide](AGENTS.md)
 
 External integrations are lazy: an endpoint that needs an unconfigured integration returns a sanitized service-unavailable error rather than breaking application startup.
+
+The operator inbox is available through
+`GET /api_v1/chat/operator/conversations`,
+`POST /api_v1/chat/operator/orders/{order_id}/read`, and the authenticated
+read-only `/api_v1/chat/operator/inbox/ws`. Durable client/manager email is a
+separate opt-in feature and stays disabled until the staged rollout explicitly
+enables it.
 
 Email verification links the verified account to its MoySklad counterparty without a side notification. Website `ORDER_UPDATED` and `ORDER_MESSAGE` notifications remain active. The order-only chat stores immutable history in PostgreSQL and attachments in MinIO, serves the same rooms through the customer website and secret-authenticated Chrome extension, and publishes updates through Redis-backed WebSockets. New chat content is not mirrored to MoySklad comments/files. There is no general-support chat or `/bot` router.
 
