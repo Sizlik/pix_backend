@@ -20,8 +20,14 @@ from fastapi import (
     status,
 )
 
-from db.schemas.chat import OrderChatMessageResponse, OrderChatPageResponse
+from db.schemas.chat import (
+    ConversationPage,
+    OperatorReadResponse,
+    OrderChatMessageResponse,
+    OrderChatPageResponse,
+)
 from dependecies.chat import get_chat_realtime
+from dependecies.operator_inbox import get_operator_inbox_realtime
 from dependecies.order_chat import get_operator_chat_authenticator, get_order_chat_service
 from errors import IntegrationNotConfigured, MoySkladOrderLookupUnavailable
 from manager.chat_files import ChatFileRejected
@@ -68,6 +74,42 @@ def _resource_id(value: str, detail: str) -> UUID:
 
 def _lookup_unavailable() -> HTTPException:
     return HTTPException(status_code=503, detail="Chat temporarily unavailable")
+
+
+@router.get(
+    "/conversations",
+    response_model=ConversationPage,
+    dependencies=operator_rest_dependencies,
+)
+async def list_operator_conversations(
+    before: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 50,
+    service: OrderChatService = Depends(get_order_chat_service),
+):
+    try:
+        return await service.list_operator_conversations(before, limit)
+    except OrderChatNotFound as error:
+        raise HTTPException(status_code=404, detail="Order not found") from error
+    except MoySkladOrderLookupUnavailable as error:
+        raise _lookup_unavailable() from error
+
+
+@router.post(
+    "/orders/{order_id}/read",
+    response_model=OperatorReadResponse,
+    dependencies=operator_rest_dependencies,
+)
+async def mark_operator_order_read(
+    order_id: str,
+    service: OrderChatService = Depends(get_order_chat_service),
+):
+    parsed_order_id = _resource_id(order_id, "Order not found")
+    try:
+        return await service.mark_operator_read(parsed_order_id)
+    except OrderChatNotFound as error:
+        raise HTTPException(status_code=404, detail="Order not found") from error
+    except MoySkladOrderLookupUnavailable as error:
+        raise _lookup_unavailable() from error
 
 
 @router.get(
@@ -219,3 +261,50 @@ async def operator_chat_websocket(websocket: WebSocket):
     finally:
         if registered:
             await realtime.disconnect(str(order_id), websocket)
+
+
+@router.websocket("/inbox/ws")
+async def operator_inbox_websocket(websocket: WebSocket):
+    await websocket.accept()
+    if not websocket.app.state.settings.enable_moysklad_order_chat:
+        await websocket.close(code=4404)
+        return
+    try:
+        authenticator = await _socket_dependency(
+            websocket,
+            get_operator_chat_authenticator,
+        )
+    except IntegrationNotConfigured:
+        await websocket.close(code=4404)
+        return
+    if not await receive_operator_authentication(
+        websocket,
+        authenticator,
+        timeout_seconds=5,
+    ):
+        await websocket.close(code=4401)
+        return
+
+    registered = False
+    realtime = None
+    try:
+        await websocket.send_json({"type": "authenticated"})
+        realtime = await _socket_dependency(
+            websocket,
+            get_operator_inbox_realtime,
+        )
+        await realtime.register("global", websocket)
+        registered = True
+        while True:
+            await websocket.receive_json()
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "code": "operator_inbox_read_only",
+                }
+            )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if registered:
+            await realtime.disconnect("global", websocket)

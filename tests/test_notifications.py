@@ -227,7 +227,7 @@ async def test_missing_order_chat_message_notification_is_omitted():
             return [notification]
 
     class OrderChat:
-        async def get_message(self, message_id):
+        async def get_notification_context(self, message_id):
             assert message_id == notification.object_id
             return None
 
@@ -239,3 +239,54 @@ async def test_missing_order_chat_message_notification_is_omitted():
     )
 
     assert response == []
+
+
+async def test_order_message_notification_contains_order_name_preview_and_attachment_count():
+    notification = SimpleNamespace(
+        id=NOTIFICATION_ID,
+        user_id=USER_ID,
+        type=NotificationTypes.ORDER_MESSAGE.value,
+        object_id=UUID("00000000-0000-0000-0000-000000000099"),
+        is_readed=False,
+    )
+    message = SimpleNamespace(
+        id=notification.object_id,
+        order_id=UUID("00000000-0000-0000-0000-000000000088"),
+        body="Проверьте заказ",
+        created_at="2026-08-22T12:00:00Z",
+    )
+
+    class Notifications:
+        async def get_notifications_by_user(self, user):
+            return [notification]
+
+    class OrderChat:
+        async def get_notification_context(self, message_id):
+            assert message_id == notification.object_id
+            return SimpleNamespace(
+                message=message,
+                order_name="12345",
+                attachment_count=2,
+            )
+
+    response = await get_user_notifications(
+        user=SimpleNamespace(id=USER_ID),
+        notification_manager=Notifications(),
+        order_manager=SimpleNamespace(),
+        order_chat_repository=OrderChat(),
+    )
+
+    assert response == [
+        {
+            **notification.__dict__,
+            "id": NOTIFICATION_ID,
+            "object_id": str(notification.object_id),
+            "message": "Проверьте заказ",
+            "order_name": "12345",
+            "attachment_count": 2,
+            "first_name": "bot",
+            "from_user_id": None,
+            "to_chat_room_id": str(message.order_id),
+            "time_created": "2026-08-22T12:00:00Z",
+        }
+    ]

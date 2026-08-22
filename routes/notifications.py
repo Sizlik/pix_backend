@@ -48,14 +48,19 @@ async def get_user_notifications(
     for notification in notifications:
         match notification.type:
             case NotificationTypes.ORDER_MESSAGE.value:
-                order_message = await order_chat_repository.get_message(notification.object_id)
-                if order_message is not None:
+                context = await order_chat_repository.get_notification_context(
+                    notification.object_id
+                )
+                if context is not None:
+                    order_message = context.message
                     response.append(
                         {
                             **notification.__dict__,
                             "id": notification.id,
                             "object_id": str(order_message.id),
                             "message": order_message.body,
+                            "order_name": context.order_name,
+                            "attachment_count": context.attachment_count,
                             "first_name": "bot",
                             "from_user_id": None,
                             "to_chat_room_id": str(order_message.order_id),

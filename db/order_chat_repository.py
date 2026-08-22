@@ -61,6 +61,13 @@ class StoredConversation:
     unread_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class StoredNotificationContext:
+    message: StoredMessage
+    order_name: str | None
+    attachment_count: int
+
+
 def object_key(order_id: UUID, message_id: UUID, attachment_id: UUID) -> str:
     return f"orders/{order_id}/messages/{message_id}/attachments/{attachment_id}"
 
@@ -237,6 +244,46 @@ class OrderChatRepository:
                 return None
             state, message, attachment_count = row
             return _stored_conversation(state, message, attachment_count)
+
+    async def get_notification_context(
+        self,
+        message_id: UUID,
+    ) -> StoredNotificationContext | None:
+        attachment_counts = (
+            select(
+                OrderChatAttachment.message_id.label("message_id"),
+                func.count(OrderChatAttachment.id).label("attachment_count"),
+            )
+            .group_by(OrderChatAttachment.message_id)
+            .subquery()
+        )
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(
+                    OrderChatMessage,
+                    OrderChatState,
+                    func.coalesce(attachment_counts.c.attachment_count, 0),
+                )
+                .join(
+                    OrderChatState,
+                    OrderChatState.order_id == OrderChatMessage.order_id,
+                )
+                .outerjoin(
+                    attachment_counts,
+                    attachment_counts.c.message_id == OrderChatMessage.id,
+                )
+                .where(OrderChatMessage.id == message_id)
+                .limit(1)
+            )
+            row = next(iter(result.all()), None)
+            if row is None:
+                return None
+            message, state, attachment_count = row
+            return StoredNotificationContext(
+                message=_stored_message(message),
+                order_name=state.order_name,
+                attachment_count=int(attachment_count),
+            )
 
     async def total_operator_unread(self) -> int:
         async with self._session_factory() as session:

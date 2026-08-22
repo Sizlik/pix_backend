@@ -222,5 +222,28 @@ async def test_conversation_returns_one_projection_or_none():
     assert missing is None
 
 
+async def test_notification_context_joins_message_state_and_attachment_count():
+    notification_message = message(MESSAGE_ONE, ORDER_ONE, NOW)
+    notification_state = state(
+        ORDER_ONE,
+        MESSAGE_THREE,
+        name="10001",
+        unread=0,
+    )
+    session = InboxSession(
+        Result(rows=[(notification_message, notification_state, 2)])
+    )
+    repository = OrderChatRepository(session_factory=lambda: session)
+
+    context = await repository.get_notification_context(MESSAGE_ONE)
+
+    assert context is not None
+    assert context.message.id == MESSAGE_ONE
+    assert context.order_name == "10001"
+    assert context.attachment_count == 2
+    sql = compiled(session.statements[0])
+    assert "order_chat_state.order_id = order_chat_message.order_id" in sql
+
+
 def test_stored_conversation_contract_is_available_to_service_layer():
     assert hasattr(repository_module, "StoredConversation")
