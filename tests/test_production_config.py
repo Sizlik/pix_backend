@@ -105,6 +105,55 @@ def test_order_chat_preflight_accepts_complete_host_network_configuration():
     assert validate_production_settings(settings, require_order_chat=True) == ()
 
 
+def test_email_preflight_requires_recipient_token_and_public_https_origin_when_enabled():
+    settings = production_settings(
+        enable_order_chat_email_notifications=True,
+    )
+
+    assert issue_names(settings) == {
+        "ORDER_CHAT_MANAGER_EMAIL",
+        "MAILERSEND_TOKEN",
+        "PIX_PUBLIC_SITE_URL",
+    }
+
+
+def test_email_preflight_accepts_complete_configuration_without_scheduler():
+    settings = production_settings(
+        enable_scheduler=False,
+        enable_order_chat_email_notifications=True,
+        order_chat_manager_email="Pixtool22@gmail.com",
+        mailersend_token="smtp-bz-token",
+        pix_public_site_url="https://pixlogistic.com",
+    )
+
+    assert validate_production_settings(settings, require_order_chat=False) == ()
+
+
+def test_email_preflight_rejects_malformed_address_and_non_origin_site_url():
+    settings = production_settings(
+        enable_order_chat_email_notifications=True,
+        order_chat_manager_email="Bcc: victim@example.com\r\n",
+        mailersend_token="smtp-bz-token",
+        pix_public_site_url="https://pixlogistic.com/dashboard?token=private",
+    )
+
+    assert issue_names(settings) == {
+        "ORDER_CHAT_MANAGER_EMAIL",
+        "PIX_PUBLIC_SITE_URL",
+    }
+
+
+def test_email_preflight_is_not_required_when_delivery_is_disabled():
+    settings = production_settings(
+        enable_order_chat_email_notifications=False,
+        order_chat_manager_email=None,
+        mailersend_token=None,
+        pix_public_site_url=None,
+    )
+
+    assert validate_production_settings(settings, require_order_chat=False) == ()
+
+
 def test_order_chat_preflight_rejects_short_extension_secret():
     settings = production_settings(
         enable_moysklad_order_chat=True,

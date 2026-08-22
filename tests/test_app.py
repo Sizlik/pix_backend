@@ -1,13 +1,70 @@
 import importlib
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 import requests
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from config import Settings
 from errors import IntegrationNotConfigured
+
+
+class LifecycleComponent:
+    def __init__(self, name, events):
+        self.name = name
+        self.events = events
+
+    async def start(self):
+        self.events.append(f"start:{self.name}")
+
+    async def stop(self):
+        self.events.append(f"stop:{self.name}")
+
+
+def lifecycle_settings(**overrides):
+    values = {
+        "_env_file": None,
+        "app_env": "local",
+        "enable_moysklad_order_chat": True,
+        "minio_endpoint": "localhost:9000",
+        "minio_access_key": "test",
+        "minio_secret_key": "test-secret",
+        "enable_order_chat_email_notifications": True,
+        "order_chat_manager_email": "manager@example.com",
+        "pix_public_site_url": "https://pixlogistic.com",
+        "mailersend_token": "smtp-token",
+        "enable_scheduler": False,
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+@contextmanager
+def patched_lifecycle(monkeypatch, *, storage_failure=None):
+    events = []
+    chat = LifecycleComponent("chat", events)
+    notifications = LifecycleComponent("notifications", events)
+    inbox = LifecycleComponent("inbox", events)
+    dispatcher = LifecycleComponent("dispatcher", events)
+
+    class Storage:
+        async def ensure_bucket(self):
+            events.append("ensure:storage")
+            if storage_failure is not None:
+                raise storage_failure
+
+    monkeypatch.setattr("main.get_chat_realtime", lambda: chat)
+    monkeypatch.setattr("main.get_notification_realtime", lambda: notifications)
+    monkeypatch.setattr("main.get_operator_inbox_realtime", lambda: inbox)
+    monkeypatch.setattr(
+        "main.build_order_chat_email_dispatcher",
+        lambda settings: dispatcher,
+    )
+    monkeypatch.setattr("main.build_order_chat_storage", lambda settings: Storage())
+    yield events
 
 
 def test_import_does_not_call_external_http(monkeypatch):
@@ -89,3 +146,76 @@ def test_capabilities_report_the_app_settings_feature_flag(monkeypatch):
     assert response.json() == {"moysklad_order_chat": True}
     assert built_from[0].endpoint == "localhost:9000"
     assert built_from[0].access_key == "test"
+
+
+def test_lifespan_starts_inbox_and_email_independently_of_scheduler(monkeypatch):
+    from main import create_app
+
+    with patched_lifecycle(monkeypatch) as events:
+        with TestClient(create_app(lifecycle_settings())) as client:
+            assert client.get("/api_v1/health").status_code == 200
+            assert events == [
+                "start:chat",
+                "start:notifications",
+                "start:inbox",
+                "start:dispatcher",
+                "ensure:storage",
+            ]
+
+    assert events == [
+        "start:chat",
+        "start:notifications",
+        "start:inbox",
+        "start:dispatcher",
+        "ensure:storage",
+        "stop:dispatcher",
+        "stop:inbox",
+        "stop:notifications",
+        "stop:chat",
+    ]
+
+
+def test_lifespan_cleans_started_components_when_storage_startup_fails(monkeypatch):
+    from main import create_app
+
+    with patched_lifecycle(
+        monkeypatch,
+        storage_failure=RuntimeError("storage unavailable"),
+    ) as events:
+        with pytest.raises(RuntimeError, match="storage unavailable"):
+            with TestClient(create_app(lifecycle_settings())):
+                pass
+
+    assert events == [
+        "start:chat",
+        "start:notifications",
+        "start:inbox",
+        "start:dispatcher",
+        "ensure:storage",
+        "stop:dispatcher",
+        "stop:inbox",
+        "stop:notifications",
+        "stop:chat",
+    ]
+
+
+def test_disabled_email_does_not_build_or_start_dispatcher(monkeypatch):
+    from main import create_app
+
+    built = []
+    monkeypatch.setattr(
+        "main.build_order_chat_email_dispatcher",
+        lambda settings: built.append(settings),
+    )
+    app = create_app(
+        Settings(
+            _env_file=None,
+            app_env="test",
+            enable_order_chat_email_notifications=False,
+        )
+    )
+
+    with TestClient(app) as client:
+        assert client.get("/api_v1/health").status_code == 200
+
+    assert built == []

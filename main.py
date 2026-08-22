@@ -10,7 +10,9 @@ from config import Settings, get_settings
 from db.redis import get_redis_backend
 from dependecies.chat import get_chat_realtime
 from dependecies.notifications import get_notification_realtime
+from dependecies.operator_inbox import get_operator_inbox_realtime
 from dependecies.order_chat import build_order_chat_storage
+from dependecies.order_chat_email import build_order_chat_email_dispatcher
 from errors import (
     AddressNameConflict,
     AddressNotFound,
@@ -37,27 +39,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(application: FastAPI):
         FastAPICache.init(get_redis_backend(), prefix="fastapi-cache")
         scheduler = None
+        dispatcher = None
         chat_realtime = get_chat_realtime()
         notification_realtime = get_notification_realtime()
-        realtime_started = settings.app_env != "test"
-        if realtime_started:
-            await chat_realtime.start()
-            await notification_realtime.start()
-        if settings.enable_moysklad_order_chat:
-            order_chat_storage = build_order_chat_storage(settings.require_order_chat())
-            await order_chat_storage.ensure_bucket()
-            application.state.order_chat_storage = order_chat_storage
-        if settings.enable_scheduler:
-            scheduler = AsyncIOScheduler()
-            scheduler.add_job(change_states_on_moysklad, "interval", hours=1)
-            scheduler.start()
-            application.state.scheduler = scheduler
+        operator_inbox_realtime = get_operator_inbox_realtime()
+        chat_started = False
+        notification_started = False
+        inbox_started = False
+        dispatcher_started = False
 
         try:
+            if settings.app_env != "test":
+                await chat_realtime.start()
+                chat_started = True
+                await notification_realtime.start()
+                notification_started = True
+                await operator_inbox_realtime.start()
+                inbox_started = True
+            if settings.enable_order_chat_email_notifications:
+                dispatcher = build_order_chat_email_dispatcher(
+                    settings.require_order_chat_email()
+                )
+                await dispatcher.start()
+                dispatcher_started = True
+            if settings.enable_moysklad_order_chat:
+                order_chat_storage = build_order_chat_storage(
+                    settings.require_order_chat()
+                )
+                await order_chat_storage.ensure_bucket()
+                application.state.order_chat_storage = order_chat_storage
+            if settings.enable_scheduler:
+                scheduler = AsyncIOScheduler()
+                scheduler.add_job(change_states_on_moysklad, "interval", hours=1)
+                scheduler.start()
+                application.state.scheduler = scheduler
+
             yield
         finally:
-            if realtime_started:
+            if dispatcher_started:
+                await dispatcher.stop()
+            if inbox_started:
+                await operator_inbox_realtime.stop()
+            if notification_started:
                 await notification_realtime.stop()
+            if chat_started:
                 await chat_realtime.stop()
             if scheduler is not None:
                 scheduler.shutdown(wait=False)

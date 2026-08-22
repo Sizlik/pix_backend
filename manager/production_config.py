@@ -13,6 +13,7 @@ from config import (
 
 MINIMUM_SECRET_LENGTH = 32
 BUCKET_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +72,8 @@ def validate_production_settings(
 
     if require_order_chat:
         _validate_order_chat(settings, issues)
+    if settings.enable_order_chat_email_notifications:
+        _validate_order_chat_email(settings, issues)
 
     return tuple(issues)
 
@@ -99,6 +102,19 @@ def _validate_order_chat(
     )
     if not BUCKET_PATTERN.fullmatch(settings.minio_bucket):
         _add(issues, "MINIO_BUCKET", "must be a valid S3 bucket name")
+
+
+def _validate_order_chat_email(
+    settings: Settings,
+    issues: list[ProductionConfigIssue],
+) -> None:
+    if not _is_email_address(settings.order_chat_manager_email):
+        _add(issues, "ORDER_CHAT_MANAGER_EMAIL", "must be a valid email address")
+    _require_secret(issues, "MAILERSEND_TOKEN", settings.mailersend_token)
+    if settings.pix_public_site_url is None or not _is_https_origin(
+        settings.pix_public_site_url
+    ):
+        _add(issues, "PIX_PUBLIC_SITE_URL", "must be an HTTPS origin")
 
 
 def _add(
@@ -154,6 +170,17 @@ def _is_https_origin(value: str) -> bool:
         and not parsed.params
         and not parsed.query
         and not parsed.fragment
+    )
+
+
+def _is_email_address(value: str | None) -> bool:
+    return (
+        value is not None
+        and value == value.strip()
+        and len(value) <= 320
+        and "\r" not in value
+        and "\n" not in value
+        and EMAIL_PATTERN.fullmatch(value) is not None
     )
 
 
