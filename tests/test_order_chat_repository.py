@@ -22,10 +22,11 @@ def test_object_key_never_contains_client_filename():
 
 
 class TransactionSpySession:
-    def __init__(self):
+    def __init__(self, state=None):
         self.begin_count = 0
         self.in_transaction = False
         self.added = []
+        self.state = state
 
     async def __aenter__(self):
         return self
@@ -48,7 +49,7 @@ class TransactionSpySession:
 
     async def execute(self, statement):
         assert self.in_transaction
-        return SimpleNamespace(scalar_one_or_none=lambda: None)
+        return SimpleNamespace(scalar_one_or_none=lambda: self.state)
 
     async def flush(self):
         assert self.in_transaction
@@ -90,11 +91,19 @@ class TransactionSpyRepository(OrderChatRepository):
         )
 
 async def test_manager_message_and_notification_share_one_transaction():
-    session = TransactionSpySession()
-    repository = TransactionSpyRepository(session)
     order_id = UUID(int=1)
     message_id = UUID(int=2)
     client_id = UUID(int=3)
+    state = SimpleNamespace(
+        order_id=order_id,
+        client_id=client_id,
+        order_name=None,
+        latest_message_id=None,
+        operator_unread_count=0,
+        updated_at=None,
+    )
+    session = TransactionSpySession(state)
+    repository = TransactionSpyRepository(session)
     attachment = NewAttachment(
         id=UUID(int=4),
         object_key="orders/1/messages/2/attachments/4",
@@ -127,6 +136,8 @@ async def test_manager_message_and_notification_share_one_transaction():
     assert notification.user_id == client_id
     assert notification.type == "ORDER_MESSAGE"
     assert notification.object_id == message_id
+    assert state.latest_message_id == message_id
+    assert state.operator_unread_count == 0
 
 
 async def test_ensure_state_does_not_create_projection_outbox_event():

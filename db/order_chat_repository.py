@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, update
@@ -8,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from db.models.notifications import Notifications
 from db.models.order_chat import (
     OrderChatAttachment,
+    OrderChatEmailOutbox,
     OrderChatMessage,
     OrderChatState,
 )
@@ -29,6 +31,12 @@ class NewAttachment:
     sha256: str
     origin: str
     origin_external_file_id: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NewEmailDelivery:
+    recipient_email: str
+    recipient_kind: Literal["client", "manager"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +159,61 @@ class OrderChatRepository:
                     stored_attachments = await self._load_attachments(session, message.id)
                 return _stored_message(message, stored_attachments)
 
+    async def create_client_message_with_delivery(
+        self,
+        *,
+        message_id: UUID,
+        order_id: UUID,
+        client_id: UUID,
+        body: str,
+        source: str,
+        order_name: str | None = None,
+        email_delivery: NewEmailDelivery | None = None,
+        attachments: tuple[NewAttachment, ...] = (),
+    ) -> StoredMessage:
+        async with self._session_factory() as session:
+            async with session.begin():
+                message, inserted = await self._insert_message(
+                    session,
+                    message_id=message_id,
+                    order_id=order_id,
+                    client_id=client_id,
+                    sender_kind="client",
+                    source=source,
+                    body=body,
+                    external_key=None,
+                    legacy_message_id=None,
+                    created_at=None,
+                )
+                if inserted:
+                    stored_attachments = await self._insert_attachments(
+                        session,
+                        message.id,
+                        attachments,
+                    )
+                    state = await self._locked_state(
+                        session,
+                        order_id,
+                        client_id,
+                    )
+                    self._apply_message_to_state(
+                        state,
+                        message.id,
+                        order_name,
+                        increment_operator_unread=True,
+                    )
+                    self._add_email_delivery(
+                        session,
+                        message.id,
+                        email_delivery,
+                    )
+                else:
+                    stored_attachments = await self._load_attachments(
+                        session,
+                        message.id,
+                    )
+                return _stored_message(message, stored_attachments)
+
     async def create_manager_message_with_notification(
         self,
         *,
@@ -162,6 +225,8 @@ class OrderChatRepository:
         external_key: str | None = None,
         attachments: tuple[NewAttachment, ...] = (),
         created_at: datetime | None = None,
+        order_name: str | None = None,
+        email_delivery: NewEmailDelivery | None = None,
     ) -> StoredMessage:
         async with self._session_factory() as session:
             async with session.begin():
@@ -179,6 +244,17 @@ class OrderChatRepository:
                 )
                 if inserted:
                     stored_attachments = await self._insert_attachments(session, message.id, attachments)
+                    state = await self._locked_state(
+                        session,
+                        order_id,
+                        client_id,
+                    )
+                    self._apply_message_to_state(
+                        state,
+                        message.id,
+                        order_name,
+                        increment_operator_unread=False,
+                    )
                     session.add(
                         Notifications(
                             user_id=client_id,
@@ -186,9 +262,61 @@ class OrderChatRepository:
                             object_id=message.id,
                         )
                     )
+                    self._add_email_delivery(
+                        session,
+                        message.id,
+                        email_delivery,
+                    )
                 else:
                     stored_attachments = await self._load_attachments(session, message.id)
                 return _stored_message(message, stored_attachments)
+
+    async def _locked_state(
+        self,
+        session,
+        order_id: UUID,
+        client_id: UUID,
+    ) -> OrderChatState:
+        result = await session.execute(
+            select(OrderChatState)
+            .where(OrderChatState.order_id == order_id)
+            .with_for_update()
+        )
+        state = result.scalar_one_or_none()
+        if state is None or state.client_id != client_id:
+            raise OrderChatNotFound()
+        return state
+
+    @staticmethod
+    def _apply_message_to_state(
+        state: OrderChatState,
+        message_id: UUID,
+        order_name: str | None,
+        *,
+        increment_operator_unread: bool,
+    ) -> None:
+        state.latest_message_id = message_id
+        if order_name is not None and order_name.strip():
+            state.order_name = order_name.strip()
+        if increment_operator_unread:
+            state.operator_unread_count += 1
+        state.updated_at = func.now()
+
+    @staticmethod
+    def _add_email_delivery(
+        session,
+        message_id: UUID,
+        email_delivery: NewEmailDelivery | None,
+    ) -> None:
+        if email_delivery is None:
+            return
+        session.add(
+            OrderChatEmailOutbox(
+                message_id=message_id,
+                recipient_email=email_delivery.recipient_email,
+                recipient_kind=email_delivery.recipient_kind,
+            )
+        )
 
     async def list_messages(
         self,
