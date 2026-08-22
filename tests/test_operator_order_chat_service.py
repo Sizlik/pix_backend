@@ -29,6 +29,7 @@ DEFAULT_ORDER = object()
 class ClientStub:
     id: UUID = CLIENT_ID
     moysklad_counterparty_id: UUID = COUNTERPARTY_ID
+    email: str = "client@example.com"
 
 
 class FakeMoySklad:
@@ -142,6 +143,7 @@ class FakeNotifications:
 
 def linked_order():
     return {
+        "name": "10001",
         "agent": {
             "meta": {
                 "href": (
@@ -200,9 +202,10 @@ def make_service():
 async def test_operator_policy_resolves_linked_counterparty_and_pins_state():
     policy, repository = make_policy()
 
-    client = await policy.resolve_client(ORDER_ID)
+    resolved = await policy.resolve_client(ORDER_ID)
 
-    assert client.id == CLIENT_ID
+    assert resolved.client.id == CLIENT_ID
+    assert resolved.order_name == "10001"
     assert repository.ensured == [(ORDER_ID, CLIENT_ID)]
 
 
@@ -211,9 +214,10 @@ async def test_operator_policy_uses_matching_state_client_when_reverse_link_is_a
     repository.user = None
     repository.state_client = ClientStub()
 
-    client = await policy.resolve_client(ORDER_ID)
+    resolved = await policy.resolve_client(ORDER_ID)
 
-    assert client.id == CLIENT_ID
+    assert resolved.client.id == CLIENT_ID
+    assert resolved.order_name == "10001"
     assert repository.ensured == [(ORDER_ID, CLIENT_ID)]
 
 

@@ -1,20 +1,30 @@
+import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import UUID, uuid4
 
 from db.order_chat_repository import (
     NewAttachment,
+    NewEmailDelivery,
     OrderChatRepository,
+    StoredConversation,
     StoredMessage,
     object_key,
 )
 from db.schemas.chat import (
+    ConversationLastMessage,
+    ConversationPage,
+    ConversationSummary,
+    ConversationUpdatedEvent,
+    OperatorReadResponse,
     OrderChatAttachmentResponse,
     OrderChatMessageResponse,
     OrderChatPageResponse,
 )
+from errors import MoySkladOrderLookupUnavailable
 from manager.chat_files import validate_upload_batch
 from manager.chat_storage import ObjectStorage
+from manager.order_chat_email import safe_message_preview
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +40,12 @@ class DownloadedAttachment:
     filename: str
     mime_type: str
     content: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedOperatorOrder:
+    client: object
+    order_name: str | None
 
 
 class OrderChatNotFound(LookupError):
@@ -81,7 +97,10 @@ class OperatorOrderChatAccessPolicy:
             await self._repository.ensure_state(order_id, client.id)
         except LookupError:
             raise OrderChatNotFound() from None
-        return client
+        return ResolvedOperatorOrder(
+            client=client,
+            order_name=_order_name(order),
+        )
 
 
 class OrderChatService:
@@ -96,6 +115,8 @@ class OrderChatService:
         realtime=None,
         operator_access_policy: OperatorOrderChatAccessPolicy | None = None,
         notification_manager=None,
+        inbox_realtime=None,
+        manager_email: str | None = None,
     ):
         self._repository = repository
         self._storage = storage
@@ -105,6 +126,8 @@ class OrderChatService:
         self._realtime = realtime
         self._operator_access_policy = operator_access_policy
         self._notification_manager = notification_manager
+        self._inbox_realtime = inbox_realtime
+        self._manager_email = manager_email
 
     async def list_messages(
         self,
@@ -133,6 +156,23 @@ class OrderChatService:
             next_before=next_before,
         )
 
+    async def list_operator_conversations(
+        self,
+        before: UUID | None,
+        limit: int,
+    ) -> ConversationPage:
+        conversations, next_before = await self._repository.list_conversations(
+            before,
+            limit,
+        )
+        hydrated = await self._hydrate_missing_order_names(conversations)
+        total_unread = await self._repository.total_operator_unread()
+        return ConversationPage(
+            items=[self._conversation_response(item) for item in hydrated],
+            next_before=next_before,
+            total_unread=total_unread,
+        )
+
     async def create_client_message(
         self,
         user,
@@ -140,7 +180,7 @@ class OrderChatService:
         body: str,
         uploads: list[PendingUpload],
     ) -> OrderChatMessageResponse:
-        await self._prepare_order(user, order_id)
+        order = await self._prepare_order(user, order_id)
         normalized_body = body.strip()
         if not normalized_body and not uploads:
             raise EmptyOrderChatMessage()
@@ -160,14 +200,19 @@ class OrderChatService:
                 validated,
                 origin="site",
             )
-            stored = await self._repository.create_message(
+            stored = await self._repository.create_client_message_with_delivery(
                 message_id=message_id,
                 order_id=order_id,
                 client_id=user.id,
-                sender_kind="client",
                 source="site",
                 body=normalized_body,
                 attachments=new_attachments,
+                order_name=_order_name(order),
+                email_delivery=(
+                    NewEmailDelivery(self._manager_email, "manager")
+                    if self._manager_email is not None
+                    else None
+                ),
             )
         except Exception:
             for key in stored_keys:
@@ -175,6 +220,7 @@ class OrderChatService:
             raise
         response = await self._response(stored)
         await self._publish_message(order_id, response)
+        await self._publish_inbox_update(order_id)
         return response
 
     async def create_manager_message(
@@ -183,7 +229,8 @@ class OrderChatService:
         body: str,
         uploads: list[PendingUpload],
     ) -> OrderChatMessageResponse:
-        client = await self.prepare_operator_order(order_id)
+        resolved = await self.prepare_operator_order(order_id)
+        client = resolved.client
         normalized_body = body.strip()
         if not normalized_body and not uploads:
             raise EmptyOrderChatMessage()
@@ -211,6 +258,12 @@ class OrderChatService:
                 source="extension",
                 external_key=None,
                 attachments=new_attachments,
+                order_name=resolved.order_name,
+                email_delivery=(
+                    NewEmailDelivery(client.email, "client")
+                    if self._manager_email is not None
+                    else None
+                ),
             )
         except Exception:
             for key in stored_keys:
@@ -219,12 +272,25 @@ class OrderChatService:
 
         response = await self._response(stored)
         await self._publish_message(order_id, response)
+        await self._publish_inbox_update(order_id)
         if self._notification_manager is not None:
             try:
                 await self._notification_manager.notify_count_changed(client.id)
             except Exception:
                 logger.warning("order chat notification count publication failed")
         return response
+
+    async def mark_operator_read(self, order_id: UUID) -> OperatorReadResponse:
+        await self.prepare_operator_order(order_id)
+        total_unread = await self._repository.clear_operator_unread(order_id)
+        conversation = await self._repository.conversation(order_id)
+        if conversation is None:
+            raise OrderChatNotFound()
+        await self._publish_conversation_update(conversation, total_unread)
+        return OperatorReadResponse(
+            order_id=order_id,
+            total_unread=total_unread,
+        )
 
     async def get_attachment(self, user, attachment_id: UUID) -> DownloadedAttachment:
         record = await self._repository.get_attachment_for_client(attachment_id)
@@ -287,6 +353,67 @@ class OrderChatService:
             ],
         )
 
+    async def _hydrate_missing_order_names(
+        self,
+        conversations: list[StoredConversation],
+    ) -> list[StoredConversation]:
+        semaphore = asyncio.Semaphore(5)
+
+        async def hydrate(item: StoredConversation) -> StoredConversation:
+            if item.order_name is not None and item.order_name.strip():
+                return item
+            if self._operator_access_policy is None:
+                return item
+            try:
+                async with semaphore:
+                    resolved = await self._operator_access_policy.resolve_client(
+                        item.order_id
+                    )
+            except (MoySkladOrderLookupUnavailable, OrderChatNotFound):
+                return item
+            if resolved.order_name is None or not resolved.order_name.strip():
+                return item
+            order_name = resolved.order_name.strip()
+            try:
+                await self._repository.cache_order_name(
+                    item.order_id,
+                    order_name,
+                )
+            except Exception:
+                logger.warning("order chat name cache update failed")
+            return replace(item, order_name=order_name)
+
+        return list(await asyncio.gather(*(hydrate(item) for item in conversations)))
+
+    @staticmethod
+    def _conversation_response(
+        conversation: StoredConversation,
+    ) -> ConversationSummary:
+        message = conversation.last_message
+        sender_label = (
+            "Менеджер Pix Logistic"
+            if message.sender_kind == "manager"
+            else "Клиент"
+        )
+        return ConversationSummary(
+            order_id=conversation.order_id,
+            order_name=(
+                conversation.order_name.strip()
+                if conversation.order_name is not None
+                and conversation.order_name.strip()
+                else _fallback_order_name(conversation.order_id)
+            ),
+            last_message=ConversationLastMessage(
+                id=message.id,
+                sender_kind=message.sender_kind,
+                sender_label=sender_label,
+                message=safe_message_preview(message.body),
+                created_at=message.created_at,
+                attachment_count=conversation.attachment_count,
+            ),
+            unread_count=conversation.unread_count,
+        )
+
     async def _store_attachments(
         self,
         order_id: UUID,
@@ -331,3 +458,49 @@ class OrderChatService:
             await self._realtime.publish(str(order_id), response.model_dump(mode="json"))
         except Exception:
             logger.warning("order chat room publication failed")
+
+    async def _publish_inbox_update(self, order_id: UUID) -> None:
+        if self._inbox_realtime is None:
+            return
+        try:
+            conversation = await self._repository.conversation(order_id)
+            if conversation is None:
+                return
+            total_unread = await self._repository.total_operator_unread()
+            await self._publish_conversation_update(
+                conversation,
+                total_unread,
+            )
+        except Exception:
+            logger.warning("order chat inbox publication failed")
+
+    async def _publish_conversation_update(
+        self,
+        conversation: StoredConversation,
+        total_unread: int,
+    ) -> None:
+        if self._inbox_realtime is None:
+            return
+        event = ConversationUpdatedEvent(
+            item=self._conversation_response(conversation),
+            total_unread=total_unread,
+        )
+        try:
+            await self._inbox_realtime.publish(
+                "global",
+                event.model_dump(mode="json"),
+            )
+        except Exception:
+            logger.warning("order chat inbox publication failed")
+
+
+def _order_name(order: dict) -> str | None:
+    try:
+        name = order.get("name")
+    except AttributeError:
+        return None
+    return name.strip() if isinstance(name, str) and name.strip() else None
+
+
+def _fallback_order_name(order_id: UUID) -> str:
+    return f"…{str(order_id)[-8:]}"

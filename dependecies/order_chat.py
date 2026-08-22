@@ -7,6 +7,7 @@ from db.moysklad_order_chat_repository import (
 from db.order_chat_repository import OrderChatRepository
 from dependecies.chat import get_chat_realtime
 from dependecies.notifications import build_notification_manager
+from dependecies.operator_inbox import get_operator_inbox_realtime
 from manager.chat_storage import MinioObjectStorage
 from manager.order_chat import (
     OperatorOrderChatAccessPolicy,
@@ -36,6 +37,11 @@ def get_order_chat_service() -> OrderChatService:
     chat_settings = settings.require_order_chat()
     moysklad = MoySkladOrderChatRepository(settings)
     repository = OrderChatRepository()
+    email_settings = (
+        settings.require_order_chat_email()
+        if settings.enable_order_chat_email_notifications
+        else None
+    )
     return OrderChatService(
         repository=repository,
         storage=get_order_chat_storage(),
@@ -45,6 +51,10 @@ def get_order_chat_service() -> OrderChatService:
         attachment_max_count=chat_settings.attachment_max_count,
         attachment_max_bytes=chat_settings.attachment_max_bytes,
         realtime=get_chat_realtime(),
+        inbox_realtime=get_operator_inbox_realtime(),
+        manager_email=(
+            email_settings.manager_email if email_settings is not None else None
+        ),
     )
 
 
