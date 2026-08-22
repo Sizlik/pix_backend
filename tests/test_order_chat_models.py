@@ -1,3 +1,4 @@
+import ast
 import runpy
 from pathlib import Path
 
@@ -46,3 +47,32 @@ def test_active_user_models_exclude_telegram_identity():
     assert "telegram_id" not in User.__table__.c
     assert "telegram_id" not in UserUpdate.model_fields
     assert OrderChatMessage.__table__.c.legacy_message_id.unique is True
+
+
+def test_migration_executes_asyncpg_ddl_statements_individually():
+    migration_path = Path("alembic/versions/c8f2a4e6d901_order_chat_delivery.py")
+    tree = ast.parse(migration_path.read_text(encoding="utf-8"))
+
+    functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in {"upgrade", "downgrade"}
+    }
+
+    for function_name in ("upgrade", "downgrade"):
+        statements = [
+            ast.literal_eval(call.args[0])
+            for call in ast.walk(functions[function_name])
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "op"
+            and call.func.attr == "execute"
+        ]
+        assert len(statements) == 3
+        for statement in statements:
+            ddl_count = sum(
+                statement.upper().count(prefix)
+                for prefix in ("CREATE FUNCTION", "CREATE TRIGGER", "DROP TRIGGER", "DROP FUNCTION")
+            )
+            assert ddl_count == 1

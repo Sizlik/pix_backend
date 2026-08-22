@@ -222,11 +222,17 @@ def upgrade() -> None:
             RAISE EXCEPTION 'order chat history is append-only';
         END;
         $$ LANGUAGE plpgsql;
-
+        """
+    )
+    op.execute(
+        """
         CREATE TRIGGER order_chat_message_append_only
         BEFORE UPDATE OR DELETE ON order_chat_message
         FOR EACH ROW EXECUTE FUNCTION reject_order_chat_mutation();
-
+        """
+    )
+    op.execute(
+        """
         CREATE TRIGGER order_chat_attachment_append_only
         BEFORE UPDATE OR DELETE ON order_chat_attachment
         FOR EACH ROW EXECUTE FUNCTION reject_order_chat_mutation();
@@ -239,8 +245,16 @@ def downgrade() -> None:
         """
         DROP TRIGGER IF EXISTS order_chat_attachment_append_only
             ON order_chat_attachment;
+        """
+    )
+    op.execute(
+        """
         DROP TRIGGER IF EXISTS order_chat_message_append_only
             ON order_chat_message;
+        """
+    )
+    op.execute(
+        """
         DROP FUNCTION IF EXISTS reject_order_chat_mutation();
         """
     )
