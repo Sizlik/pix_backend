@@ -11,3 +11,17 @@ def test_operator_chat_proxy_has_upload_rate_and_websocket_rules():
     assert "limit_req zone=operator_chat_rest burst=20 nodelay" in source
     assert "limit_req zone=operator_chat_ws burst=10 nodelay" in source
     assert "proxy_set_header Upgrade $http_upgrade" in source
+
+
+def test_operator_inbox_websocket_has_an_exact_upgrade_location_before_rest():
+    source = Path("conf.d/default.conf").read_text(encoding="utf-8")
+    exact_location = "location = /api_v1/chat/operator/inbox/ws"
+    rest_location = "location ^~ /api_v1/chat/operator/"
+
+    assert source.index(exact_location) < source.index(rest_location)
+    block_start = source.index(exact_location)
+    block_end = source.index("}", block_start)
+    block = source[block_start:block_end]
+    assert "proxy_http_version 1.1" in block
+    assert "proxy_set_header Upgrade $http_upgrade" in block
+    assert "proxy_set_header Connection $connection_upgrade" in block
